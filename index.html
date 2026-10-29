@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>末日残响</title>
+<meta name="description" content="离线放置增量游戏（原创末日丧尸题材）">
+<meta name="theme-color" content="#0a0b0d">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="末日残响">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="top">
+    <div class="title-row">
+      <h1>末日残响</h1>
+      <button id="btn-save" class="icon-btn" aria-label="打开存档面板">💾</button>
+    </div>
+    <div class="realm-row" id="realm-row" title="点击查看生存等级">
+      <span class="realm-badge" id="realm">幸存者</span>
+      <span class="realm-next" id="realm-next"></span>
+      <span class="realm-more">一览 ›</span>
+    </div>
+    <div class="bar"><div class="bar-fill" id="realm-bar"></div></div>
+  </header>
+
+  <section class="hero">
+    <div class="energy-label">赏金</div>
+    <div class="energy" id="bounty">0</div>
+    <div class="energy-rate" id="rate">+0 / 秒</div>
+    <button id="fire" class="fire" aria-label="开火">
+      <span class="fire-title">开 火</span>
+      <span class="fire-sub">每发 +<b id="click-power">1</b></span>
+    </button>
+    <div class="hero-note" id="fire-note">点击开火，击杀丧尸</div>
+  </section>
+
+  <div class="panel-zone">
+
+    <section class="tab-panel active" id="panel-arsenal">
+      <h2>军火库</h2>
+      <div id="weapons" class="list"></div>
+      <h2 class="sub">战术装备</h2>
+      <div id="gear" class="list"></div>
+    </section>
+
+    <section class="tab-panel" id="panel-army">
+      <h2>军队</h2>
+      <div id="army-list" class="list"></div>
+      <p class="panel-hint">撤退重整会清空赏金与军火库，换取声望与士兵。v0.5.0 开放。</p>
+    </section>
+
+    <section class="tab-panel" id="panel-tech">
+      <h2>科技</h2>
+      <div id="tech-list" class="list"></div>
+      <p class="panel-hint">击杀精英丧尸掉落蓝图。三分支科技树 v0.6.0 开放。</p>
+    </section>
+
+    <section class="tab-panel" id="panel-log">
+      <h2>营地补给</h2>
+      <div id="offline-list" class="list"></div>
+      <h2 class="sub">战报统计</h2>
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-label">累计点射赏金</span>
+          <span class="stat-right"><b class="stat-value" id="stat-manual">0</b><i class="stat-pct" id="stat-manual-pct"></i></span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">累计自动赏金</span>
+          <span class="stat-right"><b class="stat-value" id="stat-auto">0</b><i class="stat-pct" id="stat-auto-pct"></i></span>
+        </div>
+        <div class="stat total">
+          <span class="stat-label">累计赏金总和</span>
+          <span class="stat-right"><b class="stat-value" id="stat-total">0</b></span>
+        </div>
+      </div>
+      <p class="foot" id="foot-info"></p>
+    </section>
+
+  </div>
+
+</div>
+
+<nav class="tabs">
+  <button id="tab-arsenal" class="tab-btn active" type="button">军火库</button>
+  <button id="tab-army" class="tab-btn" type="button">军队</button>
+  <button id="tab-tech" class="tab-btn" type="button">科技</button>
+  <button id="tab-log" class="tab-btn" type="button">战报</button>
+</nav>
+
+<!-- 离线结算弹窗 -->
+<div class="modal hidden" id="offline-modal">
+  <div class="modal-box">
+    <h3>苏醒</h3>
+    <p id="offline-text"></p>
+    <button class="primary" id="offline-ok">收下</button>
+  </div>
+</div>
+
+<!-- 存档弹窗 -->
+<div class="modal hidden" id="save-modal">
+  <div class="modal-box">
+    <h3>存档</h3>
+    <p class="hint">导出：复制下方存档码，粘贴到手机备忘录保存。<br>导入：把存档码粘贴进来，点「导入」。</p>
+    <textarea id="save-text" spellcheck="false" autocomplete="off" placeholder="存档码会显示在这里"></textarea>
+    <p class="hint" id="save-hint"></p>
+    <div class="modal-actions">
+      <button id="btn-export">导出</button>
+      <button id="btn-copy">复制</button>
+      <button id="btn-import">导入</button>
+    </div>
+    <div class="modal-actions">
+      <button class="danger" id="btn-reset">重置游戏</button>
+      <button class="primary" id="btn-close-save">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- 生存等级一览 -->
+<div class="modal hidden" id="realm-modal">
+  <div class="modal-box">
+    <h3>生存等级</h3>
+    <div id="realm-list" class="realm-list"></div>
+    <p class="hint" id="realm-close">点击空白处关闭</p>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
