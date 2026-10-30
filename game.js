@@ -1,4 +1,4 @@
-/* 《末日残响 / Doomsday Echo》v0.4.2 —— 纯前端离线增量游戏（原创末日丧尸题材）
+/* 《末日残响 / Doomsday Echo》v0.7.0 —— 纯前端离线增量游戏（原创末日丧尸题材）
  *
  * 无依赖、无构建工具。想调数值，只改下面「配置区」即可。
  * 部署：整个文件夹丢给任意静态托管（如 Netlify Drop），
@@ -14,12 +14,12 @@
    *  配置区
    * ================================================================== */
 
-  var VERSION = 'v0.6.1';
+  var VERSION = 'v0.7.0';
   var SAVE_KEY = 'dse_save_v2';   // 键名不变：旧档缺新字段时按 0 补齐，不丢进度
   var AUTOSAVE_MS = 10000;        // 自动存档间隔
   var RENDER_MS = 100;            // 界面刷新节流（毫秒）
   var PRESTIGE_AT = 1e6;          // 单局累计赏金达到该值才能撤退重整
-  var ELITE_EVERY = 25;           // 每 N 次开火来一只精英
+  var ELITE_EVERY = 40;           // 每 N 次开火来一只精英（v0.6.2 从 25 提到 40）
   var ELITE_MULT = 5;             // 精英赏金倍率
 
   // 离线收益：v0.5.0 起必须先完成一次撤退重整才解锁
@@ -57,16 +57,17 @@
 
   // 军火库：成本 = baseCost * costMult^已拥有数量
   //   rate = 每秒自动赏金；dmg = 每持有一把提供的单发伤害
+  //   v0.6.2 把点伤整体压到原来的 0.6 倍（手枪已是下限，保持 1）
   var WEAPONS = [
     { id:'pistol',   name:'手枪',       icon:'🔫', desc:'警局里唯一还能上膛的东西', baseCost:15,         costMult:1.15, rate:0.1,    dmg:1 },
-    { id:'smg',      name:'冲锋枪',     icon:'🔥', desc:'从便利店保安手里接管',     baseCost:150,        costMult:1.15, rate:1,      dmg:3 },
-    { id:'shotgun',  name:'霰弹枪',     icon:'💥', desc:'近距离一枪一片',           baseCost:1700,       costMult:1.15, rate:12,     dmg:12 },
-    { id:'rifle',    name:'突击步枪',   icon:'🎖️', desc:'军队制式，弹药管够',       baseCost:20000,      costMult:1.15, rate:150,    dmg:60 },
-    { id:'sniper',   name:'狙击步枪',   icon:'🎯', desc:'五公里外点名',             baseCost:250000,     costMult:1.15, rate:2000,   dmg:300 },
-    { id:'flamer',   name:'火焰喷射器', icon:'🧯', desc:'清场利器，也烧掉了退路',   baseCost:3000000,    costMult:1.15, rate:25000,  dmg:1500 },
-    { id:'launcher', name:'榴弹发射器', icon:'🧨', desc:'把整条街变成弹坑',         baseCost:40000000,   costMult:1.15, rate:350000, dmg:8000 },
-    { id:'railgun',  name:'电磁炮',     icon:'⚡', desc:'避难所自研，一发耗三天电', baseCost:500000000,  costMult:1.15, rate:5000000, dmg:40000 },
-    { id:'orbital',  name:'轨道炮',     icon:'🛰️', desc:'天基武器，开火要国会签字', baseCost:7000000000, costMult:1.15, rate:80000000, dmg:200000 }
+    { id:'smg',      name:'冲锋枪',     icon:'🔥', desc:'从便利店保安手里接管',     baseCost:150,        costMult:1.15, rate:1,      dmg:2 },
+    { id:'shotgun',  name:'霰弹枪',     icon:'💥', desc:'近距离一枪一片',           baseCost:1700,       costMult:1.15, rate:12,     dmg:7 },
+    { id:'rifle',    name:'突击步枪',   icon:'🎖️', desc:'军队制式，弹药管够',       baseCost:20000,      costMult:1.15, rate:150,    dmg:36 },
+    { id:'sniper',   name:'狙击步枪',   icon:'🎯', desc:'五公里外点名',             baseCost:250000,     costMult:1.15, rate:2000,   dmg:180 },
+    { id:'flamer',   name:'火焰喷射器', icon:'🧯', desc:'清场利器，也烧掉了退路',   baseCost:3000000,    costMult:1.15, rate:25000,  dmg:900 },
+    { id:'launcher', name:'榴弹发射器', icon:'🧨', desc:'把整条街变成弹坑',         baseCost:40000000,   costMult:1.15, rate:350000, dmg:4800 },
+    { id:'railgun',  name:'电磁炮',     icon:'⚡', desc:'避难所自研，一发耗三天电', baseCost:500000000,  costMult:1.15, rate:5000000, dmg:24000 },
+    { id:'orbital',  name:'轨道炮',     icon:'🛰️', desc:'天基武器，开火要国会签字', baseCost:7000000000, costMult:1.15, rate:80000000, dmg:120000 }
   ];
 
   // 战术装备：type = clickMult / globalMult（clickAdd 仍支持，只是目前没有装备用它）
@@ -111,28 +112,28 @@
   // kind: click / auto / all / off(离线效率加法) / crit(暴击率加法) /
   //       eliteReduce(精英间隔减少) / eliteMult(精英赏金乘算)
   var TECH_NODES = [
-    { id:'f1', branch:'fire', name:'膛线优化',   cost:3,   kind:'click',       mult:1.15, desc:'单发伤害 ×1.15' },
-    { id:'f2', branch:'fire', name:'高爆弹头',   cost:8,   kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
-    { id:'f3', branch:'fire', name:'弹道计算',   cost:18,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
-    { id:'f4', branch:'fire', name:'暴击训练',   cost:40,  kind:'crit',        value:0.15, desc:'15% 概率暴击（伤害 ×3）' },
-    { id:'f5', branch:'fire', name:'重武器许可', cost:90,  kind:'click',       mult:1.25, desc:'单发伤害 ×1.25' },
-    { id:'f6', branch:'fire', name:'天基火控',   cost:200, kind:'click',       mult:1.50, desc:'单发伤害 ×1.50' },
+    { id:'f1', branch:'fire', name:'膛线优化',   cost:4,   kind:'click',       mult:1.15, desc:'单发伤害 ×1.15' },
+    { id:'f2', branch:'fire', name:'高爆弹头',   cost:10,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
+    { id:'f3', branch:'fire', name:'弹道计算',   cost:22,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
+    { id:'f4', branch:'fire', name:'暴击训练',   cost:48,  kind:'crit',        value:0.15, desc:'15% 概率暴击（伤害 ×3）' },
+    { id:'f5', branch:'fire', name:'重武器许可', cost:108, kind:'click',       mult:1.25, desc:'单发伤害 ×1.25' },
+    { id:'f6', branch:'fire', name:'天基火控',   cost:240, kind:'click',       mult:1.50, desc:'单发伤害 ×1.50' },
 
-    { id:'l1', branch:'logi', name:'补给线',     cost:3,   kind:'auto',        mult:1.15, desc:'自动赏金 ×1.15' },
-    { id:'l2', branch:'logi', name:'弹药工厂',   cost:8,   kind:'auto',        mult:1.20, desc:'自动赏金 ×1.20' },
-    { id:'l3', branch:'logi', name:'野战医院',   cost:18,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
-    { id:'l4', branch:'logi', name:'铁路网',     cost:40,  kind:'auto',        mult:1.25, desc:'自动赏金 ×1.25' },
-    { id:'l5', branch:'logi', name:'战时经济',   cost:90,  kind:'auto',        mult:1.30, desc:'自动赏金 ×1.30' },
-    { id:'l6', branch:'logi', name:'军工复合体', cost:200, kind:'auto',        mult:1.50, desc:'自动赏金 ×1.50' },
+    { id:'l1', branch:'logi', name:'补给线',     cost:4,   kind:'auto',        mult:1.15, desc:'自动赏金 ×1.15' },
+    { id:'l2', branch:'logi', name:'弹药工厂',   cost:10,  kind:'auto',        mult:1.20, desc:'自动赏金 ×1.20' },
+    { id:'l3', branch:'logi', name:'野战医院',   cost:22,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
+    { id:'l4', branch:'logi', name:'铁路网',     cost:48,  kind:'auto',        mult:1.25, desc:'自动赏金 ×1.25' },
+    { id:'l5', branch:'logi', name:'战时经济',   cost:108, kind:'auto',        mult:1.30, desc:'自动赏金 ×1.30' },
+    { id:'l6', branch:'logi', name:'军工复合体', cost:240, kind:'auto',        mult:1.50, desc:'自动赏金 ×1.50' },
 
-    { id:'b1', branch:'bio',  name:'尸群研究',   cost:3,   kind:'eliteReduce', value:5,    desc:'精英间隔 −5 发' },
-    { id:'b2', branch:'bio',  name:'基因样本',   cost:8,   kind:'click',       mult:1.10, desc:'单发伤害 ×1.10' },
-    { id:'b3', branch:'bio',  name:'诱饵战术',   cost:18,  kind:'eliteMult',   mult:2.00, desc:'精英赏金 ×2' },
-    { id:'b4', branch:'bio',  name:'战场急救',   cost:40,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
-    { id:'b5', branch:'bio',  name:'神经加速',   cost:90,  kind:'click',       mult:1.30, desc:'单发伤害 ×1.30' },
-    { id:'b6', branch:'bio',  name:'人类适应',   cost:200, kind:'all',         mult:1.50, desc:'单发与自动 ×1.50' }
+    { id:'b1', branch:'bio',  name:'尸群研究',   cost:4,   kind:'eliteReduce', value:10,   desc:'精英间隔 −10 发' },
+    { id:'b2', branch:'bio',  name:'基因样本',   cost:10,  kind:'click',       mult:1.10, desc:'单发伤害 ×1.10' },
+    { id:'b3', branch:'bio',  name:'诱饵战术',   cost:22,  kind:'eliteMult',   mult:2.00, desc:'精英赏金 ×2' },
+    { id:'b4', branch:'bio',  name:'战场急救',   cost:48,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
+    { id:'b5', branch:'bio',  name:'神经加速',   cost:108, kind:'click',       mult:1.30, desc:'单发伤害 ×1.30' },
+    { id:'b6', branch:'bio',  name:'人类适应',   cost:240, kind:'all',         mult:1.50, desc:'单发与自动 ×1.50' }
   ];
-  var ELITE_BP = 2;        // 击杀精英获得的蓝图
+  var ELITE_BP = 1;        // 击杀精英获得的蓝图（v0.6.2 从 2 降到 1）
   var HORDE_SECONDS = 300; // 每隔多少秒来一波尸潮
 
   var UNITS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
@@ -201,6 +202,8 @@
       tech: {},         // 已研究的节点 id -> 1
       playTime: 0,      // 累计游玩秒数（尸潮计时用，离线不计）
       lastHorde: 0,     // 上次尸潮时的 playTime
+      eliteProgress: 0, // 距离下一只精英还差几发（用计数器而不是取模，改间隔时能立刻生效）
+      buyAmount: 1,     // 军火库一次买几把（1 或 10）
       startedAt: now,
       lastSeen: now
     };
@@ -403,9 +406,16 @@
     state.clicks++;
     var crit = Math.random() < techCritChance();
     if (crit) { gain *= 3; }
+
+    // 用计数器推进，而不是 clicks % interval：
+    // 研究「尸群研究」把间隔改小后，下一次精英会立刻按新间隔到来，不会因为取模错位而"看起来没生效"
+    state.eliteProgress = (state.eliteProgress || 0) + 1;
     var interval = eliteEvery();
-    var elite = (state.clicks % interval === 0);
-    if (elite) { gain *= eliteMult(); }
+    var elite = state.eliteProgress >= interval;
+    if (elite) {
+      state.eliteProgress = 0;
+      gain *= eliteMult();
+    }
     addBounty(gain, 'click');
     floatText('+' + fmt(gain) + (crit ? '!' : ''));
     if (elite) {
@@ -420,11 +430,26 @@
     render();
   }
 
+  // 批量购买：一次买几把（1 或 10），只在军火库生效
+  function buyCount() {
+    return state.buyAmount === 10 ? 10 : 1;
+  }
+
+  // n 把的总价 = 等比数列求和：baseCost × r^owned × (r^n − 1) / (r − 1)
+  function weaponBulkCost(w, n) {
+    if (n <= 1) { return weaponCost(w); }
+    var owned = state.weapons[w.id] || 0;
+    var r = w.costMult;
+    var first = w.baseCost * Math.pow(r, owned);
+    return Math.ceil(first * (Math.pow(r, n) - 1) / (r - 1));
+  }
+
   function buyWeapon(w) {
-    var cost = weaponCost(w);
+    var n = buyCount();
+    var cost = weaponBulkCost(w, n);
     if (state.bounty < cost) { return; }
     state.bounty -= cost;
-    state.weapons[w.id] = (state.weapons[w.id] || 0) + 1;
+    state.weapons[w.id] = (state.weapons[w.id] || 0) + n;
     render();
   }
 
@@ -500,7 +525,7 @@
   }
 
   function prestigeBlueprints(gain) {
-    return Math.floor(gain * 0.5) + 1;
+    return Math.floor(gain * 0.25) + 1;
   }
 
   function closePrestigeModal() {
@@ -558,7 +583,7 @@
   }
 
   function grantHorde() {
-    var n = 2 + Math.floor(rankIndex() / 3);
+    var n = 1 + Math.floor(rankIndex() / 4);
     state.blueprints = (state.blueprints || 0) + n;
     toast('尸潮来袭！蓝图 +' + n);
   }
@@ -585,7 +610,8 @@
 
         var btn = el('button', 'buy-btn');
         btn.type = 'button';
-        btn.appendChild(el('span', 'buy-label', '获取'));
+        var label = el('span', 'buy-label', '获取');
+        btn.appendChild(label);
         var cost = el('span', 'buy-cost', '');
         btn.appendChild(cost);
         btn.addEventListener('click', function () { buyWeapon(w); });
@@ -595,7 +621,7 @@
         row.appendChild(btn);
         box.appendChild(row);
 
-        w._row = row; w._owned = owned; w._rate = rate; w._btn = btn; w._cost = cost;
+        w._row = row; w._owned = owned; w._rate = rate; w._btn = btn; w._cost = cost; w._label = label;
       })(WEAPONS[i]);
     }
   }
@@ -855,23 +881,29 @@
       ui.rankNext.textContent = '已达当前版本最高等级';
     }
 
-    // 精英进度
-    var left = ELITE_EVERY - (state.clicks % ELITE_EVERY);
-    ui.fireNote.textContent = '下一只精英：还需 ' + left + ' 发（击杀赏金 ×' + ELITE_MULT + '）';
+    // 精英进度（间隔会被「尸群研究」缩短，所以这里也走 eliteEvery()）
+    var eliteGap = eliteEvery();
+    var left = Math.max(1, eliteGap - (state.eliteProgress || 0));
+    ui.fireNote.textContent = '下一只精英：还需 ' + left + ' 发（每 ' + eliteGap +
+      ' 发一只，赏金 ×' + fmt(eliteMult()) + '）';
 
+    var bulkN = buyCount();
     for (var i = 0; i < WEAPONS.length; i++) {
       var w = WEAPONS[i];
       var owned = state.weapons[w.id] || 0;
-      var cost = weaponCost(w);
+      var cost = weaponBulkCost(w, bulkN);
       var visible = i === 0 || state.total >= revealAt(WEAPONS, i);
       w._row.style.display = visible ? '' : 'none';
       if (!visible) { continue; }
       w._owned.textContent = '×' + owned;
+      w._label.textContent = bulkN > 1 ? '获取 ×' + bulkN : '获取';
       w._cost.textContent = fmt(cost);
       w._rate.textContent = '单发 +' + fmt(w.dmg) + ' ｜ 自动 +' + fmt(w.rate * globalMult()) + ' / 秒';
       w._btn.disabled = state.bounty < cost;
       w._btn.classList.toggle('can', state.bounty >= cost);
     }
+    ui.bulk1.classList.toggle('active', bulkN === 1);
+    ui.bulk10.classList.toggle('active', bulkN === 10);
 
     for (var j = 0; j < GEAR.length; j++) {
       var g = GEAR[j];
@@ -1122,6 +1154,9 @@
     for (var t = 0; t < TECH_NODES.length; t++) {
       if (srcT[TECH_NODES[t].id]) { merged.tech[TECH_NODES[t].id] = 1; }
     }
+    // v0.6.2：精英进度改成计数器；老档没有该字段就从 0 开始
+    merged.eliteProgress = Math.max(0, Number(data.eliteProgress) || 0);
+    merged.buyAmount = Number(data.buyAmount) === 10 ? 10 : 1;
 
     merged.bounty = Math.max(0, merged.bounty);
     merged.total = Math.max(merged.total, merged.bounty);
@@ -1227,6 +1262,8 @@
     ui.fireNote = $('fire-note');
     ui.weapons = $('weapons');
     ui.gear = $('gear');
+    ui.bulk1 = $('bulk-1');
+    ui.bulk10 = $('bulk-10');
     ui.armyList = $('army-list');
     ui.techList = $('tech-list');
     ui.offlineList = $('offline-list');
@@ -1256,6 +1293,9 @@
 
   function bindEvents() {
     ui.fire.addEventListener('click', fire);
+
+    ui.bulk1.addEventListener('click', function () { state.buyAmount = 1; render(); });
+    ui.bulk10.addEventListener('click', function () { state.buyAmount = 10; render(); });
 
     $('btn-save').addEventListener('click', function () { ui.saveModal.classList.remove('hidden'); });
     $('btn-close-save').addEventListener('click', function () { ui.saveModal.classList.add('hidden'); });

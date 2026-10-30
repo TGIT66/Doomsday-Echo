@@ -1,10 +1,10 @@
 /* Service Worker：离线缓存
  *
  * 重要：每次改动 index.html / style.css / game.js 后，
- *       把下面的 CACHE 版本号 +1（例如 dse-v9 -> dse-v10），
+ *       把下面的 CACHE 版本号 +1（例如 dse-v11 -> dse-v12），
  *       否则手机浏览器会一直用旧缓存。
  */
-var CACHE = 'dse-v10';
+var CACHE = 'dse-v12';
 
 var ASSETS = [
   './',

@@ -156,9 +156,9 @@ rModal._handlers.click[0]({ target: rModal });
 check('点空白处 → 关闭', rModal.classList.contains('hidden') === true);
 
 console.log('\n[2] 开火与精英');
-for (let i = 0; i < 25; i++) click('fire');
-check('25 发含 1 只精英 = 29 赏金', txt('bounty') === '29', txt('bounty'));
-check('点射统计入账', txt('stat-manual') === '29', txt('stat-manual'));
+for (let i = 0; i < 40; i++) click('fire');
+check('40 发含 1 只精英 = 44 赏金', txt('bounty') === '44', txt('bounty'));
+check('点射统计入账', txt('stat-manual') === '44', txt('stat-manual'));
 check('自动仍为 0', txt('stat-auto') === '0', txt('stat-auto'));
 check('精英提示条弹出', txt('toast').indexOf('精英') >= 0, txt('toast'));
 
@@ -236,7 +236,7 @@ click('btn-import');
 check('赏金保留', txt('bounty') === '20.00K', txt('bounty'));
 check('等级按累计判定（猎手）', txt('realm') === '猎手', txt('realm'));
 check('自动产出 = 4.2', txt('rate') === '+4.20 / 秒', txt('rate'));
-check('单发伤害 = (1+12+9) × 1.5 = 33', txt('click-power') === '33', txt('click-power'));
+check('单发伤害 = (1+12+6) × 1.5 = 28.5', txt('click-power') === '28.5', txt('click-power'));
 click('tab-army');
 const hud = nodes.get('army-list').children[0];
 const pCard = nodes.get('army-list').children[1];
@@ -258,7 +258,7 @@ check('自动产出 ×1.03 = 4.33', txt('rate') === '+4.33 / 秒', txt('rate'));
 check('工兵首价 5', engRow.children[2].children[1].textContent === '5', engRow.children[2].children[1].textContent);
 engRow.children[2]._handlers.click[0]();
 check('招募工兵后声望 -5', hud.children[1].textContent === '494', hud.children[1].textContent);
-check('单发伤害 ×1.08 = 35.6', txt('click-power') === '35.6', txt('click-power'));
+check('单发伤害 ×1.08 = 30.8', txt('click-power') === '30.8', txt('click-power'));
 
 console.log('\n[9b] 撤退重整');
 pCard.children[2]._handlers.click[0]();
@@ -297,7 +297,7 @@ click('tab-tech');
 check('科技页 = 蓝图条 + 3 分支 × (标题 + 6 节点)', nodes.get('tech-list').children.length === 22,
   'n=' + nodes.get('tech-list').children.length);
 const techHud = nodes.get('tech-list').children[0];
-check('重整给了 8 蓝图', techHud.children[1].textContent === '8', techHud.children[1].textContent);
+check('重整给了 4 蓝图', techHud.children[1].textContent === '4', techHud.children[1].textContent);
 check('尸潮倒计时存在', techHud.children[2].textContent.indexOf('尸潮') >= 0, techHud.children[2].textContent);
 
 const f1Row = nodes.get('tech-list').children[2];
@@ -309,7 +309,7 @@ check('f2 需前置',
 
 const dmgBeforeTech = parseFloat(txt('click-power'));
 f1Row.children[2]._handlers.click[0]();
-check('研究后蓝图 8 - 3 = 5', techHud.children[1].textContent === '5', techHud.children[1].textContent);
+check('研究后蓝图 4 - 4 = 0', techHud.children[1].textContent === '0', techHud.children[1].textContent);
 check('单发伤害被 ×1.15 放大', parseFloat(txt('click-power')) > dmgBeforeTech,
   dmgBeforeTech + ' -> ' + txt('click-power'));
 check('f1 标记已研究', f1Row.children[1].children[0].children[1].textContent === '已研究',
@@ -318,8 +318,8 @@ check('f2 变为蓝图不足', f2Row.children[1].children[0].children[1].textCon
   f2Row.children[1].children[0].children[1].textContent);
 
 const bpBeforeElite = parseInt(techHud.children[1].textContent, 10);
-for (let i = 0; i < 25; i++) click('fire');
-check('击杀精英 +2 蓝图', parseInt(techHud.children[1].textContent, 10) === bpBeforeElite + 2,
+for (let i = 0; i < 40; i++) click('fire');
+check('击杀精英 +1 蓝图', parseInt(techHud.children[1].textContent, 10) === bpBeforeElite + 1,
   bpBeforeElite + ' -> ' + techHud.children[1].textContent);
 
 const bpBeforeHorde = parseInt(techHud.children[1].textContent, 10);
@@ -327,6 +327,21 @@ let t2 = 20000;
 for (let i = 0; i < 310; i++) { const cb = rafCb; t2 += 1000; cb(t2); }
 check('尸潮按时到达并给蓝图', parseInt(techHud.children[1].textContent, 10) > bpBeforeHorde,
   bpBeforeHorde + ' -> ' + techHud.children[1].textContent);
+
+console.log('\n[9e] 尸群研究缩短精英间隔');
+const saveD = { v: 3, bounty: 50000, total: 200000000, manual: 1000, auto: 1000, clicks: 0,
+  weapons: { pistol: 10 }, gear: {}, offlineTier: 0,
+  prestige: 100, prestigeCount: 2, runBase: 0, soldiers: {},
+  blueprints: 100, tech: { b1: 1 }, playTime: 0, lastHorde: 0, eliteProgress: 0, lastSeen: Date.now() };
+nodes.get('save-text').value = btoa(JSON.stringify(saveD));
+click('btn-import');
+click('tab-tech');
+check('提示显示每 30 发一只', txt('fire-note').indexOf('每 30 发') >= 0, txt('fire-note'));
+const bpBefore30 = parseInt(nodes.get('tech-list').children[0].children[1].textContent, 10);
+for (let i = 0; i < 30; i++) click('fire');
+check('30 发就出精英（间隔确实生效）',
+  parseInt(nodes.get('tech-list').children[0].children[1].textContent, 10) === bpBefore30 + 1,
+  bpBefore30 + ' -> ' + nodes.get('tech-list').children[0].children[1].textContent);
 
 console.log('\n[10] 导出 / 非法存档 / 存储键');
 click('btn-export');
@@ -344,6 +359,35 @@ document.hidden = true;
 document.hidden = false;
 (docHandlers.visibilitychange || []).forEach((f) => f());
 check('visibilitychange 未抛异常', true);
+
+console.log('\n[12] 军火库十连购买');
+const saveE = { v: 3, bounty: 1000000, total: 1000000, manual: 0, auto: 0, clicks: 0,
+  weapons: { pistol: 0 }, gear: {}, offlineTier: 0,
+  prestige: 0, prestigeCount: 0, runBase: 0, soldiers: {},
+  blueprints: 0, tech: {}, playTime: 0, lastHorde: 0, eliteProgress: 0, lastSeen: Date.now() };
+nodes.get('save-text').value = btoa(JSON.stringify(saveE));
+click('btn-import');
+click('tab-arsenal');
+const pRow0 = nodes.get('weapons').children[0];
+check('默认是单次购买', pRow0.children[2].children[0].textContent === '获取',
+  pRow0.children[2].children[0].textContent);
+check('单买价格 15', pRow0.children[2].children[1].textContent === '15',
+  pRow0.children[2].children[1].textContent);
+
+click('bulk-10');
+check('切到 ×10 后按钮标签变化', pRow0.children[2].children[0].textContent === '获取 ×10',
+  pRow0.children[2].children[0].textContent);
+check('十连价格 = 等比求和 305', pRow0.children[2].children[1].textContent === '305',
+  pRow0.children[2].children[1].textContent);
+
+pRow0.children[2]._handlers.click[0]();
+check('一次买到 ×10', pRow0.children[1].children[0].children[1].textContent === '×10',
+  pRow0.children[1].children[0].children[1].textContent);
+check('十把枪的单发伤害 1 + 10 = 11', txt('click-power') === '11', txt('click-power'));
+
+click('bulk-1');
+check('切回单次后价格按已拥有 10 把重算', pRow0.children[2].children[1].textContent === '61',
+  pRow0.children[2].children[1].textContent);
 
 console.log('');
 if (failures.length) {
