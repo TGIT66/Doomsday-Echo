@@ -1,4 +1,4 @@
-/* 《末日残响 / Doomsday Echo》v0.8.1 —— 纯前端离线增量游戏（原创末日丧尸题材）
+/* 《末日残响 / Doomsday Echo》v0.10.0 —— 纯前端离线增量游戏（原创末日丧尸题材）
  *
  * 无依赖、无构建工具。想调数值，只改下面「配置区」即可。
  * 部署：整个文件夹丢给任意静态托管（如 Netlify Drop），
@@ -14,13 +14,25 @@
    *  配置区
    * ================================================================== */
 
-  var VERSION = 'v0.8.1';
+  var VERSION = 'v0.10.0';
   var SAVE_KEY = 'dse_save_v2';   // 键名不变：旧档缺新字段时按 0 补齐，不丢进度
   var AUTOSAVE_MS = 10000;        // 自动存档间隔
   var RENDER_MS = 100;            // 界面刷新节流（毫秒）
   var PRESTIGE_AT = 1e6;          // 单局累计赏金达到该值才能撤退重整
   var ELITE_EVERY = 40;           // 每 N 次开火来一只精英（v0.6.2 从 25 提到 40）
-  var ELITE_MULT = 5;             // 精英赏金倍率
+  var ELITE_MULT = 2;             // 非尸潮时的精英赏金倍率（v0.9.0 从 5 降到 2）
+
+  // 尸潮：开火满 HORDE_CLICKS 发就触发，持续 HORDE_SECONDS 秒，结束后还要冷却 HORDE_COOLDOWN 秒。
+  //   持续期间：点击赏金 ×2、精英赏金 ×5、开火掉落蓝图的概率 ×5。
+  //   触发的那一发本身不算在尸潮内；尸潮进行中的开火不累计次数。
+  //   冷却期间的开火**不算有效次数**，冷却走完才从 0 重新开始累计。
+  //   v0.9.0 之前是「每 300 秒游玩时间白送一张蓝图」，现在改成限时增益窗口。
+  var HORDE_CLICKS = 100;
+  var HORDE_SECONDS = 120;
+  var HORDE_COOLDOWN = 300;       // 尸潮结束后的冷却（秒），冷却期间开火不计数
+  var HORDE_CLICK_MULT = 2;
+  var HORDE_ELITE_MULT = 5;
+  var HORDE_BP_MULT = 5;
 
   // 科技：偏后期功能，累计声望达到门槛才开放
   var TECH_UNLOCK_PRESTIGE = 300; // 累计（不是余额）声望达到该值解锁科技与兑换
@@ -141,7 +153,7 @@
     { id:'b5', branch:'bio',  name:'神经加速',   cost:108, kind:'click',       mult:1.30, desc:'单发伤害 ×1.30' },
     { id:'b6', branch:'bio',  name:'人类适应',   cost:240, kind:'all',         mult:1.50, desc:'单发与自动 ×1.50' }
   ];
-  var HORDE_SECONDS = 300; // 每隔多少秒来一波尸潮
+  /* 尸潮时长 HORDE_SECONDS 定义在顶部配置区（v0.9.0 起是 120 秒的限时增益窗口） */
 
   var UNITS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
 
@@ -208,8 +220,10 @@
       soldiers: soldiers,
       blueprints: 0,    // 科技点
       tech: {},         // 已研究的节点 id -> 1
-      playTime: 0,      // 累计游玩秒数（尸潮计时用，离线不计）
-      lastHorde: 0,     // 上次尸潮时的 playTime
+      playTime: 0,      // 累计游玩秒数（离线不计）
+      hordeProgress: 0, // 距离下一次尸潮还差几发（只有「不在尸潮中、也不在冷却中」才累加）
+      hordeLeft: 0,     // 尸潮剩余秒数，> 0 表示正在尸潮中
+      hordeCooldown: 0, // 尸潮冷却剩余秒数，> 0 表示冷却中（此时开火不计数）
       eliteProgress: 0, // 距离下一只精英还差几发（用计数器而不是取模，改间隔时能立刻生效）
       buyAmount: 1,     // 军火库一次买几把（1 或 10）
       startedAt: now,
@@ -309,9 +323,46 @@
     return Math.max(10, ELITE_EVERY - techSum('eliteReduce'));
   }
 
-  // 精英赏金倍率（「诱饵战术」翻倍）
+  // 精英赏金倍率：平时 ×2，尸潮中 ×5，再乘科技「诱饵战术」
   function eliteMult() {
-    return ELITE_MULT * techProduct('eliteMult');
+    return (hordeActive() ? HORDE_ELITE_MULT : ELITE_MULT) * techProduct('eliteMult');
+  }
+
+  /* ---------- 尸潮 ---------- */
+
+  // hordeLeft > 0 就是正在尸潮中。倒计时按游玩时间走（见 loop），切后台会暂停
+  function hordeActive() {
+    return (state.hordeLeft || 0) > 0;
+  }
+
+  // 尸潮期间开火掉落蓝图的概率倍率
+  function hordeDropMult() {
+    return hordeActive() ? HORDE_BP_MULT : 1;
+  }
+
+  // 开火实际掉蓝图的概率 = (基础 + 科技) × 尸潮倍率，封顶 100%
+  function effectiveDropRate() {
+    return Math.min(1, techDropRate() * hordeDropMult());
+  }
+
+  function startHorde() {
+    state.hordeProgress = 0;
+    state.hordeLeft = HORDE_SECONDS;
+    state.hordeCooldown = 0;
+    toast('尸潮来袭！' + HORDE_SECONDS + ' 秒内  点击 ×' + HORDE_CLICK_MULT +
+      ' ｜ 精英 ×' + HORDE_ELITE_MULT + ' ｜ 蓝图 ×' + HORDE_BP_MULT);
+  }
+
+  function endHorde() {
+    state.hordeLeft = 0;
+    state.hordeProgress = 0;
+    state.hordeCooldown = HORDE_COOLDOWN;   // 持续结束后才进入冷却
+    toast('尸潮退去，冷却 ' + Math.round(HORDE_COOLDOWN / 60) + ' 分钟');
+  }
+
+  // 冷却中：开火既不触发、也不计数——这段时间的点击是"无效次数"
+  function hordeCooling() {
+    return !hordeActive() && (state.hordeCooldown || 0) > 0;
   }
 
   // 科技是后期内容：累计声望（不是余额）达标才开放
@@ -427,6 +478,11 @@
   function fire() {
     var gain = getClickDamage();
     state.clicks++;
+
+    // 尸潮状态在这一发开始时就定下来：触发尸潮的那一发本身不算在尸潮内
+    var inHorde = hordeActive();
+    if (inHorde) { gain *= HORDE_CLICK_MULT; }
+
     var crit = Math.random() < techCritChance();
     if (crit) { gain *= 3; }
 
@@ -444,18 +500,24 @@
 
     if (elite) {
       toast('精英丧尸！赏金 ×' + fmt(eliteMult()));
-      if (ui.fire.classList) {
-        ui.fire.classList.add('elite');
-        setTimeout(function () { ui.fire.classList.remove('elite'); }, 320);
-      }
+      ui.fire.classList.add('elite');
+      setTimeout(function () { ui.fire.classList.remove('elite'); }, 320);
     }
 
     // 开火有极低概率捡到蓝图（科技没解锁也照样累积，解锁后一次性可用）
-    if (Math.random() < techDropRate()) {
+    if (Math.random() < effectiveDropRate()) {
       state.blueprints = (state.blueprints || 0) + 1;
       floatText('+1 蓝图');
     }
     if (navigator && navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
+
+    // 尸潮计数：只有「不在尸潮中、也不在冷却中」的开火才算有效次数
+    //   · 尸潮进行中：不累计
+    //   · 冷却中：不累计（冷却走完才从 0 重新开始数）
+    if (!inHorde && !hordeCooling()) {
+      state.hordeProgress = Math.min(HORDE_CLICKS, (state.hordeProgress || 0) + 1);
+      if (state.hordeProgress >= HORDE_CLICKS) { startHorde(); }
+    }
     render();
   }
 
@@ -623,11 +685,7 @@
     render();
   }
 
-  function grantHorde() {
-    var n = 1 + Math.floor(rankIndex() / 4);
-    state.blueprints = (state.blueprints || 0) + n;
-    toast('尸潮来袭！蓝图 +' + n);
-  }
+  // v0.9.0：尸潮不再直接发蓝图，改成开火触发的限时增益窗口（见 startHorde / loop）
 
   /* ==================================================================
    *  界面
@@ -952,11 +1010,37 @@
       ui.rankNext.textContent = '已达当前版本最高等级';
     }
 
+    // 尸潮：进度条平时累积「距下一次还差几发」，触发后变成倒计时（红色脉冲），
+    //       冷却中显示为灰色等待态（从空填到满 = 还要等多久，这段时间的开火不计数）
+    var inHorde = hordeActive();
+    var cooling = hordeCooling();
+    var hordeProg = Math.max(0, Math.min(HORDE_CLICKS, state.hordeProgress || 0));
+    var hordeLeftSec = Math.max(0, Math.ceil(state.hordeLeft || 0));
+    var coolLeftSec = Math.max(0, Math.ceil(state.hordeCooldown || 0));
+    ui.hordeBar.classList.toggle('active', inHorde);
+    ui.hordeBar.classList.toggle('cooling', cooling);
+    ui.fire.classList.toggle('horde', inHorde);
+    ui.hordeFill.style.width = (inHorde
+      ? Math.max(0, Math.min(100, (state.hordeLeft || 0) / HORDE_SECONDS * 100))
+      : (cooling
+        ? Math.max(0, Math.min(100, (1 - (state.hordeCooldown || 0) / HORDE_COOLDOWN) * 100))
+        : hordeProg / HORDE_CLICKS * 100)).toFixed(1) + '%';
+    if (inHorde) {
+      ui.hordeText.textContent = '尸潮进行中 ｜ 点击 ×' + HORDE_CLICK_MULT + ' ｜ 剩余 ' + hordeLeftSec + ' 秒';
+    } else if (cooling) {
+      ui.hordeText.textContent = '尸潮冷却 ' + Math.floor(coolLeftSec / 60) + ':' +
+        ('0' + (coolLeftSec % 60)).slice(-2) + ' ｜ 结束后重新计数';
+    } else {
+      ui.hordeText.textContent = '尸潮 ' + hordeProg + ' / ' + HORDE_CLICKS + ' 发';
+    }
+
     // 精英进度（间隔会被「尸群研究」缩短，所以这里也走 eliteEvery()）
     var eliteGap = eliteEvery();
     var left = Math.max(1, eliteGap - (state.eliteProgress || 0));
-    ui.fireNote.textContent = '下一只精英：还需 ' + left + ' 发（每 ' + eliteGap +
-      ' 发一只，赏金 ×' + fmt(eliteMult()) + '）';
+    ui.fireNote.textContent = inHorde
+      ? '尸潮中：精英 ×' + fmt(eliteMult()) + ' ｜ 蓝图掉率 ×' + HORDE_BP_MULT
+      : '下一只精英：还需 ' + left + ' 发（每 ' + eliteGap +
+        ' 发一只，赏金 ×' + fmt(eliteMult()) + '）';
 
     var bulkN = buyCount();
     for (var i = 0; i < WEAPONS.length; i++) {
@@ -1059,9 +1143,10 @@
 
     // 科技
     ui.techBp.textContent = fmt(state.blueprints || 0);
-    var leftHorde = Math.max(0, HORDE_SECONDS - ((state.playTime || 0) - (state.lastHorde || 0)));
-    ui.techTimer.textContent = '尸潮 ' + Math.ceil(leftHorde) + ' 秒 ｜ 掉率 ' +
-      (techDropRate() * 100).toFixed(1) + '%';
+    ui.techTimer.textContent = (inHorde
+      ? '尸潮中 ' + hordeLeftSec + ' 秒'
+      : (cooling ? '冷却 ' + coolLeftSec + ' 秒' : '尸潮 ' + Math.max(0, HORDE_CLICKS - hordeProg) + ' 发')) +
+      ' ｜ 掉率 ' + (effectiveDropRate() * 100).toFixed(1) + '%';
 
     var tUnlocked = techUnlocked();
     var gate = ui.techGate;
@@ -1134,10 +1219,15 @@
     toastTimer = setTimeout(function () { ui.toast.classList.add('hidden'); }, 1800);
   }
 
-  function showOffline(seconds, gain) {
-    ui.offlineText.textContent =
-      '你离开了 ' + fmtDuration(seconds) + '，防线自行开火，带回 ' +
-      fmt(gain) + ' 赏金。';
+  // 离线结算弹窗：时长与收益各自成块，数字用警报黄（样式见 style.css 的 .offline-stat-value）
+  // rawSeconds = 真实离开时长；settledSeconds = 被上限截断后实际结算的时长
+  function showOffline(rawSeconds, settledSeconds, gain) {
+    ui.offlineDuration.textContent = fmtDuration(settledSeconds);
+    ui.offlineGain.textContent = '+' + fmt(gain);
+    var truncated = rawSeconds - settledSeconds >= 60;
+    ui.offlineText.textContent = '离线效率 ' + Math.round(offlineEfficiency() * 100) + '%' +
+      ' ｜ 结算上限 ' + offlineCapHours() + ' 小时' +
+      (truncated ? ' ｜ 已达上限，超出的时间没有结算' : '');
     ui.offlineModal.classList.remove('hidden');
   }
 
@@ -1157,11 +1247,20 @@
       var r = getAutoRate();
       if (r > 0) { addBounty(r * dt); }
 
-      // 尸潮：按累计游玩时间触发，离线不计时
       state.playTime = (state.playTime || 0) + dt;
-      if (state.playTime - (state.lastHorde || 0) >= HORDE_SECONDS) {
-        state.lastHorde = state.playTime;
-        grantHorde();
+
+      // 尸潮倒计时：跟着游玩时间走，dt 已被限制在 1 秒内，所以切后台回来不会一次扣光
+      if ((state.hordeLeft || 0) > 0) {
+        state.hordeLeft -= dt;
+        if (state.hordeLeft <= 0) { endHorde(); }
+      } else if ((state.hordeCooldown || 0) > 0) {
+        // 冷却：走完才重新开始计数，冷却期间的点击一律作废
+        state.hordeCooldown -= dt;
+        if (state.hordeCooldown <= 0) {
+          state.hordeCooldown = 0;
+          state.hordeProgress = 0;
+          toast('尸潮冷却结束，重新开始计数');
+        }
       }
     }
     if (now - lastRender >= RENDER_MS) {
@@ -1184,7 +1283,7 @@
     var gain = getAutoRate() * capped * offlineEfficiency();
     if (gain <= 0) { return; }
     addBounty(gain);
-    if (capped >= 60) { showOffline(capped, gain); }
+    if (capped >= 60) { showOffline(seconds, capped, gain); }
   }
 
   /* ==================================================================
@@ -1244,14 +1343,19 @@
     // v0.6.0 新增：蓝图 / 已研究节点 / 游玩时长
     merged.blueprints = Math.max(0, Number(data.blueprints) || 0);
     merged.playTime = Math.max(0, Number(data.playTime) || 0);
-    merged.lastHorde = Math.max(0, Number(data.lastHorde) || 0);
-    if (merged.lastHorde > merged.playTime) { merged.lastHorde = 0; }
     var srcT = data.tech || {};
     for (var t = 0; t < TECH_NODES.length; t++) {
       if (srcT[TECH_NODES[t].id]) { merged.tech[TECH_NODES[t].id] = 1; }
     }
     // v0.6.2：精英进度改成计数器；老档没有该字段就从 0 开始
     merged.eliteProgress = Math.max(0, Number(data.eliteProgress) || 0);
+    // v0.9.0：尸潮改成开火触发 + 限时窗口；老档缺字段就是「从头开始数」
+    merged.hordeProgress = Math.min(HORDE_CLICKS, Math.max(0, Number(data.hordeProgress) || 0));
+    merged.hordeLeft = Math.min(HORDE_SECONDS, Math.max(0, Number(data.hordeLeft) || 0));
+    merged.hordeCooldown = Math.min(HORDE_COOLDOWN, Math.max(0, Number(data.hordeCooldown) || 0));
+    // 冷却中的次数一律作废：只有冷却结束之后才重新计数
+    if (merged.hordeCooldown > 0) { merged.hordeProgress = 0; }
+    if (merged.hordeLeft > 0) { merged.hordeCooldown = 0; }
     merged.buyAmount = Number(data.buyAmount) === 10 ? 10 : 1;
 
     merged.bounty = Math.max(0, merged.bounty);
@@ -1356,6 +1460,9 @@
     ui.rankClose = $('realm-close');
     ui.fire = $('fire');
     ui.fireNote = $('fire-note');
+    ui.hordeBar = $('horde-bar');
+    ui.hordeFill = $('horde-fill');
+    ui.hordeText = $('horde-text');
     ui.weapons = $('weapons');
     ui.gear = $('gear');
     ui.bulk1 = $('bulk-1');
@@ -1371,6 +1478,8 @@
     ui.footInfo = $('foot-info');
     ui.offlineModal = $('offline-modal');
     ui.offlineText = $('offline-text');
+    ui.offlineDuration = $('offline-duration');
+    ui.offlineGain = $('offline-gain');
     ui.prestigeModal = $('prestige-modal');
     ui.prestigeText = $('prestige-text');
     ui.saveModal = $('save-modal');

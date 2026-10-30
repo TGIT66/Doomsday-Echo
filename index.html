@@ -40,6 +40,10 @@
       <span class="fire-title">开 火</span>
       <span class="fire-sub">每发 +<b id="click-power">1</b></span>
     </button>
+    <div class="horde-bar" id="horde-bar">
+      <div class="horde-fill" id="horde-fill"></div>
+      <span class="horde-text" id="horde-text">尸潮 0 / 100 发</span>
+    </div>
     <div class="hero-note" id="fire-note">点击开火，击杀丧尸</div>
   </section>
 
@@ -105,7 +109,18 @@
 <div class="modal hidden" id="offline-modal">
   <div class="modal-box">
     <h3>苏醒</h3>
-    <p id="offline-text"></p>
+    <p class="offline-lead">防线在你离开时自行开火，带回一批补给。</p>
+    <div class="offline-stats">
+      <div class="offline-stat">
+        <span class="offline-stat-label">离线时长</span>
+        <span class="offline-stat-value" id="offline-duration">—</span>
+      </div>
+      <div class="offline-stat">
+        <span class="offline-stat-label">带回赏金</span>
+        <span class="offline-stat-value" id="offline-gain">—</span>
+      </div>
+    </div>
+    <p class="offline-note hint" id="offline-text"></p>
     <button class="primary" id="offline-ok">收下</button>
   </div>
 </div>

@@ -142,6 +142,8 @@ check('科技页 = 蓝图条 + 兑换 + 3 分支', nodes.get('tech-list').childr
   'n=' + nodes.get('tech-list').children.length);
 check('战报统计初始为 0', txt('stat-manual') === '0' && txt('stat-auto') === '0' && txt('stat-total') === '0');
 check('精英进度提示', txt('fire-note').indexOf('下一只精英') >= 0, txt('fire-note'));
+check('尸潮条初始 0 / 100', txt('horde-text').indexOf('0 / 100') >= 0, txt('horde-text'));
+check('尸潮条初始不激活', nodes.get('horde-bar').classList.contains('active') === false);
 
 console.log('\n[1b] 生存等级弹窗');
 const rModal = nodes.get('realm-modal');
@@ -157,10 +159,11 @@ check('点空白处 → 关闭', rModal.classList.contains('hidden') === true);
 
 console.log('\n[2] 开火与精英');
 for (let i = 0; i < 40; i++) click('fire');
-check('40 发含 1 只精英 = 44 赏金', txt('bounty') === '44', txt('bounty'));
-check('点射统计入账', txt('stat-manual') === '44', txt('stat-manual'));
+check('40 发含 1 只精英 = 41 赏金（精英 ×2）', txt('bounty') === '41', txt('bounty'));
+check('点射统计入账', txt('stat-manual') === '41', txt('stat-manual'));
 check('自动仍为 0', txt('stat-auto') === '0', txt('stat-auto'));
 check('精英提示条弹出', txt('toast').indexOf('精英') >= 0, txt('toast'));
+check('精英倍率显示 ×2', txt('toast').indexOf('×2') >= 0, txt('toast'));
 
 console.log('\n[3] 重置');
 click('btn-reset');
@@ -359,23 +362,109 @@ Math.random = realRandom;
 check('开火掉落 +1 蓝图', parseInt(techHud.children[1].textContent, 10) === bpBeforeElite + 1,
   techHud.children[1].textContent);
 
-const bpBeforeHorde = parseInt(techHud.children[1].textContent, 10);
+const bpEl = () => parseInt(techHud.children[1].textContent, 10) || 0;
+
+// v0.9.0：尸潮不再「按时间白送蓝图」，挂机不会产出任何蓝图
+const bpBeforeTime = bpEl();
 let t2 = 20000;
 for (let i = 0; i < 310; i++) { const cb = rafCb; t2 += 1000; cb(t2); }
-check('尸潮按时到达并给蓝图', parseInt(techHud.children[1].textContent, 10) > bpBeforeHorde,
-  bpBeforeHorde + ' -> ' + techHud.children[1].textContent);
+check('挂机 310 秒不再白送蓝图', bpEl() === bpBeforeTime, bpBeforeTime + ' -> ' + bpEl());
 
 console.log('\n[9e] 尸群研究缩短精英间隔');
 const saveD = { v: 3, bounty: 50000, total: 200000000, manual: 1000, auto: 1000, clicks: 0,
   weapons: { pistol: 10 }, gear: {}, offlineTier: 0,
   prestige: 100, prestigeCount: 2, runBase: 0, soldiers: {},
-  blueprints: 100, tech: { b1: 1 }, playTime: 0, lastHorde: 0, eliteProgress: 0, lastSeen: Date.now() };
+  blueprints: 100, tech: { b1: 1 }, playTime: 0, hordeProgress: 0, hordeLeft: 0, eliteProgress: 0, lastSeen: Date.now() };
 nodes.get('save-text').value = btoa(JSON.stringify(saveD));
 click('btn-import');
 click('tab-tech');
 check('提示显示每 30 发一只', txt('fire-note').indexOf('每 30 发') >= 0, txt('fire-note'));
 for (let i = 0; i < 30; i++) click('fire');
 check('30 发后计数器归零（间隔确实生效）', txt('fire-note').indexOf('还需 30 发') >= 0, txt('fire-note'));
+
+console.log('\n[9f] 尸潮：开火 100 发触发，120 秒限时增益');
+const saveF = { v: 3, bounty: 0, total: 0, manual: 0, auto: 0, clicks: 0,
+  weapons: {}, gear: {}, offlineTier: 0,
+  prestige: 0, prestigeCount: 0, runBase: 0, soldiers: {},
+  blueprints: 0, tech: {}, playTime: 0, hordeProgress: 0, hordeLeft: 0, lastSeen: Date.now() };
+nodes.get('save-text').value = btoa(JSON.stringify(saveF));
+click('btn-import');
+click('tab-arsenal');
+const hordeBar = nodes.get('horde-bar');
+const fireBtn = nodes.get('fire');
+check('导入后尸潮进度 0 / 100', txt('horde-text').indexOf('0 / 100') >= 0, txt('horde-text'));
+
+for (let i = 0; i < 99; i++) click('fire');
+check('99 发还没触发尸潮', hordeBar.classList.contains('active') === false, txt('horde-text'));
+check('进度 99 / 100', txt('horde-text').indexOf('99 / 100') >= 0, txt('horde-text'));
+check('非尸潮精英 ×2（99 发 = 97 + 2×2 = 101）', txt('bounty') === '101', txt('bounty'));
+
+click('fire');
+check('第 100 发触发尸潮', hordeBar.classList.contains('active') === true, txt('horde-text'));
+check('触发的那一发本身还是普通伤害（+1 → 102）', txt('bounty') === '102', txt('bounty'));
+check('横幅切到进行中', txt('horde-text').indexOf('尸潮进行中') >= 0, txt('horde-text'));
+check('剩余 120 秒', txt('horde-text').indexOf('120 秒') >= 0, txt('horde-text'));
+check('提示条切到尸潮模式', txt('fire-note').indexOf('尸潮中') >= 0, txt('fire-note'));
+check('开火按钮进入尸潮高亮', fireBtn.classList.contains('horde') === true);
+
+click('fire');
+check('尸潮中点击 ×2（+2 → 104）', txt('bounty') === '104', txt('bounty'));
+for (let i = 0; i < 18; i++) click('fire');
+check('尸潮中 18 发普通点击 = +36', txt('bounty') === '140', txt('bounty'));
+click('fire');
+check('尸潮中精英 ×5（2 × 5 = 10）', txt('bounty') === '150', txt('bounty'));
+check('精英提示显示 ×5', txt('toast').indexOf('×5') >= 0, txt('toast'));
+
+// 掉率 ×5：基础 0.2%，尸潮中 1%；取 0.5% 正好落在两者之间
+const bp0 = bpEl();
+const realRandom2 = Math.random;
+Math.random = () => 0.005;
+click('fire');
+Math.random = realRandom2;
+check('尸潮中掉率 ×5（0.5% 命中）', bpEl() === bp0 + 1, bp0 + ' -> ' + bpEl());
+
+// 120 秒倒数：只在游玩时推进（dt 上限 1 秒/帧）
+let t3 = 400000;
+for (let i = 0; i < 119; i++) { const cb = rafCb; t3 += 1000; cb(t3); }
+check('119 秒时尸潮仍在', hordeBar.classList.contains('active') === true, txt('horde-text'));
+check('倒计时显示剩余 1 秒', txt('horde-text').indexOf('剩余 1 秒') >= 0, txt('horde-text'));
+{ const cb = rafCb; t3 += 1000; cb(t3); }
+check('120 秒后尸潮结束', hordeBar.classList.contains('active') === false, txt('horde-text'));
+check('结束后立刻进入冷却', hordeBar.classList.contains('cooling') === true, txt('horde-text'));
+check('冷却显示 5:00', txt('horde-text').indexOf('5:00') >= 0, txt('horde-text'));
+check('冷却中不显示蓄能进度', txt('horde-text').indexOf('/ 100') === -1, txt('horde-text'));
+check('尸潮退去提示', txt('toast').indexOf('尸潮退去') >= 0, txt('toast'));
+check('开火按钮退出尸潮高亮', fireBtn.classList.contains('horde') === false);
+
+// 冷却中：既不掉蓝图（0.5% > 基础 0.2%），点击也不算有效次数
+const bp1 = bpEl();
+Math.random = () => 0.005;
+click('fire');
+Math.random = realRandom2;
+check('冷却中 0.5% 不触发掉落', bpEl() === bp1, bp1 + ' -> ' + bpEl());
+
+// 冷却期间猛点 60 发，全部作废
+for (let i = 0; i < 60; i++) click('fire');
+check('冷却中点击不累计（无蓄能进度）', txt('horde-text').indexOf('/ 100') === -1, txt('horde-text'));
+check('冷却中点击不触发尸潮', hordeBar.classList.contains('active') === false, txt('horde-text'));
+
+// 冷却 300 秒走完
+for (let i = 0; i < 299; i++) { const cb = rafCb; t3 += 1000; cb(t3); }
+check('冷却 299 秒还没结束', hordeBar.classList.contains('cooling') === true, txt('horde-text'));
+check('冷却剩 0:01', txt('horde-text').indexOf('0:01') >= 0, txt('horde-text'));
+{ const cb = rafCb; t3 += 1000; cb(t3); }
+check('冷却结束', hordeBar.classList.contains('cooling') === false, txt('horde-text'));
+check('冷却结束后从头计数（之前 61 发全部作废）', txt('horde-text').indexOf('0 / 100') >= 0, txt('horde-text'));
+check('冷却结束提示', txt('toast').indexOf('重新开始计数') >= 0, txt('toast'));
+
+// 冷却结束后才重新有效计数
+for (let i = 0; i < 99; i++) click('fire');
+check('冷却后 99 发仍不触发', hordeBar.classList.contains('active') === false, txt('horde-text'));
+check('进度 99 / 100', txt('horde-text').indexOf('99 / 100') >= 0, txt('horde-text'));
+click('fire');
+check('冷却后第 100 发才触发', hordeBar.classList.contains('active') === true, txt('horde-text'));
+check('第二轮从 120 秒开始', txt('horde-text').indexOf('剩余 120 秒') >= 0, txt('horde-text'));
+check('第二轮不再有冷却态', hordeBar.classList.contains('cooling') === false);
 
 console.log('\n[10] 导出 / 非法存档 / 存储键');
 click('btn-export');
@@ -394,11 +483,42 @@ document.hidden = false;
 (docHandlers.visibilitychange || []).forEach((f) => f());
 check('visibilitychange 未抛异常', true);
 
+console.log('\n[11b] 离线结算弹窗');
+const saveG = { v: 3, bounty: 0, total: 0, manual: 0, auto: 0, clicks: 0,
+  weapons: { pistol: 10 }, gear: {}, offlineTier: 0,
+  prestige: 0, prestigeCount: 1, runBase: 0, soldiers: {},
+  blueprints: 0, tech: {}, playTime: 0, hordeProgress: 0, hordeLeft: 0, hordeCooldown: 0,
+  lastSeen: Date.now() };
+nodes.get('save-text').value = btoa(JSON.stringify(saveG));
+click('btn-import');
+click('offline-ok');            // 先关掉可能残留的弹窗（DOM 桩不会读 HTML 里的初始 class）
+check('导入本身不弹离线窗', nodes.get('offline-modal').classList.contains('hidden') === true);
+
+// 切后台存一次档 → 把时间拨快 3 小时 → 回前台结算
+document.hidden = true;
+(docHandlers.visibilitychange || []).forEach((f) => f());
+const offlineNow = Date.now();
+class OfflineFakeDate extends Date { static now() { return offlineNow + 3 * 3600 * 1000; } }
+sandbox.Date = OfflineFakeDate;
+document.hidden = false;
+(docHandlers.visibilitychange || []).forEach((f) => f());
+sandbox.Date = Date;
+
+check('回来后弹出离线弹窗', nodes.get('offline-modal').classList.contains('hidden') === false);
+check('离线时长按上限截断成 2 小时', txt('offline-duration') === '2 小时 0 分', txt('offline-duration'));
+check('带回赏金 = 1/秒 × 7200 秒 × 50% = +3.60K', txt('offline-gain') === '+3.60K', txt('offline-gain'));
+check('说明写了效率与上限',
+  txt('offline-text').indexOf('离线效率 50%') >= 0 && txt('offline-text').indexOf('2 小时') >= 0,
+  txt('offline-text'));
+check('超出上限有提示', txt('offline-text').indexOf('已达上限') >= 0, txt('offline-text'));
+click('offline-ok');
+check('点「收下」关闭弹窗', nodes.get('offline-modal').classList.contains('hidden') === true);
+
 console.log('\n[12] 军火库十连购买');
 const saveE = { v: 3, bounty: 1000000, total: 1000000, manual: 0, auto: 0, clicks: 0,
   weapons: { pistol: 0 }, gear: {}, offlineTier: 0,
   prestige: 0, prestigeCount: 0, runBase: 0, soldiers: {},
-  blueprints: 0, tech: {}, playTime: 0, lastHorde: 0, eliteProgress: 0, lastSeen: Date.now() };
+  blueprints: 0, tech: {}, playTime: 0, hordeProgress: 0, hordeLeft: 0, eliteProgress: 0, lastSeen: Date.now() };
 nodes.get('save-text').value = btoa(JSON.stringify(saveE));
 click('btn-import');
 click('tab-arsenal');

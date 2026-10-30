@@ -4,7 +4,7 @@
  *       把下面的 CACHE 版本号 +1（例如 dse-v13 -> dse-v14），
  *       否则手机浏览器会一直用旧缓存。
  */
-var CACHE = 'dse-v14';
+var CACHE = 'dse-v18';
 
 var ASSETS = [
   './',
