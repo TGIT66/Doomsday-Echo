@@ -138,7 +138,7 @@ check('生存等级为幸存者', txt('realm') === '幸存者', txt('realm'));
 check('军火库共 9 把武器', nodes.get('weapons').children.length === 9, 'n=' + nodes.get('weapons').children.length);
 check('只显示 1 把武器', nodes.get('weapons').children.filter((c) => c.style.display !== 'none').length === 1);
 check('战术装备全部隐藏', nodes.get('gear').children.every((c) => c.style.display === 'none'));
-check('科技页 = 蓝图条 + 3 分支 × 7', nodes.get('tech-list').children.length === 22,
+check('科技页 = 蓝图条 + 兑换 + 3 分支', nodes.get('tech-list').children.length === 23,
   'n=' + nodes.get('tech-list').children.length);
 check('战报统计初始为 0', txt('stat-manual') === '0' && txt('stat-auto') === '0' && txt('stat-total') === '0');
 check('精英进度提示', txt('fire-note').indexOf('下一只精英') >= 0, txt('fire-note'));
@@ -227,6 +227,18 @@ check('离线显示未解锁', offLv() === '未解锁', offLv());
 check('提示需撤退重整', offDesc().indexOf('撤退重整') >= 0, offDesc());
 check('离线按钮禁用', offRow.children[2].disabled === true);
 
+console.log('\n[8c] 科技在声望达标前锁定');
+click('tab-tech');
+const gate0 = nodes.get('tech-list').children[1];
+check('声望 0 时显示科技锁定', gate0.children[1].children[0].children[0].textContent === '科技锁定',
+  gate0.children[1].children[0].children[0].textContent);
+check('门槛提示 0 / 300', gate0.children[1].children[1].textContent.indexOf('/ 300') >= 0,
+  gate0.children[1].children[1].textContent);
+check('未解锁时兑换按钮禁用', gate0.children[2].children[0].disabled === true);
+check('未解锁时节点不可研究', nodes.get('tech-list').children[3].children[2].disabled === true);
+check('节点标记未解锁', nodes.get('tech-list').children[3].children[1].children[0].children[1].textContent === '未解锁',
+  nodes.get('tech-list').children[3].children[1].children[0].children[1].textContent);
+
 console.log('\n[9] 声望与士兵');
 const saveB = { v: 3, bounty: 20000, total: 200000000, manual: 300000, auto: 900000, clicks: 500,
   weapons: { pistol: 12, smg: 3 }, gear: { ammo: 2 }, offlineTier: 0,
@@ -235,8 +247,8 @@ nodes.get('save-text').value = btoa(JSON.stringify(saveB));
 click('btn-import');
 check('赏金保留', txt('bounty') === '20.00K', txt('bounty'));
 check('等级按累计判定（猎手）', txt('realm') === '猎手', txt('realm'));
-check('自动产出 = 4.2', txt('rate') === '+4.20 / 秒', txt('rate'));
-check('单发伤害 = (1+12+6) × 1.5 = 28.5', txt('click-power') === '28.5', txt('click-power'));
+check('自动产出 = 4.2 × 声望 1.5 = 6.3', txt('rate') === '+6.30 / 秒', txt('rate'));
+check('单发伤害 = (1+12+6) × 1.5 × 声望 1.5 = 42.8', txt('click-power') === '42.8', txt('click-power'));
 click('tab-army');
 const hud = nodes.get('army-list').children[0];
 const pCard = nodes.get('army-list').children[1];
@@ -245,6 +257,7 @@ const engRow = nodes.get('army-list').children[3];
 const officerRow = nodes.get('army-list').children[5];
 check('声望显示 500', hud.children[1].textContent === '500', hud.children[1].textContent);
 check('军队等级提示 Lv.0', hud.children[2].textContent.indexOf('Lv.0') >= 0, hud.children[2].textContent);
+check('声望被动显示在军队条上', hud.children[2].textContent.indexOf('全局 +50.0%') >= 0, hud.children[2].textContent);
 check('可重整', pCard.children[2].disabled === false);
 check('重整显示声望 +14', pCard.children[2].children[1].textContent === '声望 +14',
   pCard.children[2].children[1].textContent);
@@ -253,12 +266,12 @@ rookieRow.children[2]._handlers.click[0]();
 check('招募新兵后声望 -1', hud.children[1].textContent === '499', hud.children[1].textContent);
 check('新兵 ×1', rookieRow.children[1].children[0].children[1].textContent === '×1',
   rookieRow.children[1].children[0].children[1].textContent);
-check('自动产出 ×1.03 = 4.33', txt('rate') === '+4.33 / 秒', txt('rate'));
+check('自动产出 ×1.03 = 6.48', txt('rate') === '+6.48 / 秒', txt('rate'));
 
 check('工兵首价 5', engRow.children[2].children[1].textContent === '5', engRow.children[2].children[1].textContent);
 engRow.children[2]._handlers.click[0]();
 check('招募工兵后声望 -5', hud.children[1].textContent === '494', hud.children[1].textContent);
-check('单发伤害 ×1.08 = 30.8', txt('click-power') === '30.8', txt('click-power'));
+check('单发伤害 ×1.08 = 46.0', txt('click-power') === '46.0', txt('click-power'));
 
 console.log('\n[9b] 撤退重整');
 pCard.children[2]._handlers.click[0]();
@@ -271,7 +284,7 @@ check('声望 494 + 14 = 508', hud.children[1].textContent === '508', hud.childr
 check('军火库归零', nodes.get('weapons').children[0].children[1].children[0].children[1].textContent === '×0',
   nodes.get('weapons').children[0].children[1].children[0].children[1].textContent);
 check('累计不清零，等级仍是猎手', txt('realm') === '猎手', txt('realm'));
-check('单发伤害回落到 1.08', txt('click-power') === '1.08', txt('click-power'));
+check('单发伤害回落到 1 × 1.08 × 声望 1.508 = 1.63', txt('click-power') === '1.63', txt('click-power'));
 check('自动产出归零', txt('rate') === '+0 / 秒', txt('rate'));
 check('重整后按钮变灰（本局产出不足）', pCard.children[2].disabled === true);
 
@@ -292,16 +305,29 @@ check('军官把上限加到 3 小时', officerRow.children[1].children[2].textC
 for (let i = 0; i < 9; i++) rookieRow.children[2]._handlers.click[0]();
 check('兵力 10+ 后升到军队 Lv.1', hud.children[2].textContent.indexOf('Lv.1') >= 0, hud.children[2].textContent);
 
-console.log('\n[9d] 科技');
+console.log('\n[9d] 科技：解锁门槛、兑换、研究');
 click('tab-tech');
-check('科技页 = 蓝图条 + 3 分支 × (标题 + 6 节点)', nodes.get('tech-list').children.length === 22,
+check('科技页 = 蓝图条 + 兑换 + 3 分支 × 7', nodes.get('tech-list').children.length === 23,
   'n=' + nodes.get('tech-list').children.length);
 const techHud = nodes.get('tech-list').children[0];
-check('重整给了 4 蓝图', techHud.children[1].textContent === '4', techHud.children[1].textContent);
-check('尸潮倒计时存在', techHud.children[2].textContent.indexOf('尸潮') >= 0, techHud.children[2].textContent);
+const gate = nodes.get('tech-list').children[1];
+check('重整不再直接送蓝图', techHud.children[1].textContent === '0', techHud.children[1].textContent);
+check('累计声望 508 已过门槛', gate.children[1].children[0].children[0].textContent === '声望兑换',
+  gate.children[1].children[0].children[0].textContent);
+check('兑换比例 10:1', gate.children[1].children[1].textContent.indexOf('10 声望 = 1 蓝图') >= 0,
+  gate.children[1].children[1].textContent);
+check('掉率显示在 hud', techHud.children[2].textContent.indexOf('掉率') >= 0, techHud.children[2].textContent);
 
-const f1Row = nodes.get('tech-list').children[2];
-const f2Row = nodes.get('tech-list').children[3];
+check('换 10 按钮可用', gate.children[2].children[1].disabled === false);
+gate.children[2].children[1]._handlers.click[0]();
+check('兑换 10 张后蓝图 = 10', techHud.children[1].textContent === '10', techHud.children[1].textContent);
+click('tab-army');
+check('军队页声望同步扣减（365 - 100 = 265）', nodes.get('army-list').children[0].children[1].textContent === '265',
+  nodes.get('army-list').children[0].children[1].textContent);
+click('tab-tech');
+
+const f1Row = nodes.get('tech-list').children[3];
+const f2Row = nodes.get('tech-list').children[4];
 check('f1 可研究', f1Row.children[2].disabled === false, f1Row.children[2].children[1].textContent);
 check('f2 需前置',
   f2Row.children[2].disabled === true && f2Row.children[1].children[0].children[1].textContent === '需前置',
@@ -309,7 +335,7 @@ check('f2 需前置',
 
 const dmgBeforeTech = parseFloat(txt('click-power'));
 f1Row.children[2]._handlers.click[0]();
-check('研究后蓝图 4 - 4 = 0', techHud.children[1].textContent === '0', techHud.children[1].textContent);
+check('研究后蓝图 10 - 4 = 6', techHud.children[1].textContent === '6', techHud.children[1].textContent);
 check('单发伤害被 ×1.15 放大', parseFloat(txt('click-power')) > dmgBeforeTech,
   dmgBeforeTech + ' -> ' + txt('click-power'));
 check('f1 标记已研究', f1Row.children[1].children[0].children[1].textContent === '已研究',
@@ -317,10 +343,21 @@ check('f1 标记已研究', f1Row.children[1].children[0].children[1].textConten
 check('f2 变为蓝图不足', f2Row.children[1].children[0].children[1].textContent === '蓝图不足',
   f2Row.children[1].children[0].children[1].textContent);
 
+// 精英不再掉蓝图
 const bpBeforeElite = parseInt(techHud.children[1].textContent, 10);
+const realRandom = Math.random;
+Math.random = () => 0.999;              // 压掉随机掉落，只看精英
 for (let i = 0; i < 40; i++) click('fire');
-check('击杀精英 +1 蓝图', parseInt(techHud.children[1].textContent, 10) === bpBeforeElite + 1,
+check('击杀精英不再送蓝图', parseInt(techHud.children[1].textContent, 10) === bpBeforeElite,
   bpBeforeElite + ' -> ' + techHud.children[1].textContent);
+check('精英仍有多倍赏金', txt('toast').indexOf('赏金 ×') >= 0, txt('toast'));
+
+// 开火掉落（把随机数压到 0 必定命中）
+Math.random = () => 0;
+click('fire');
+Math.random = realRandom;
+check('开火掉落 +1 蓝图', parseInt(techHud.children[1].textContent, 10) === bpBeforeElite + 1,
+  techHud.children[1].textContent);
 
 const bpBeforeHorde = parseInt(techHud.children[1].textContent, 10);
 let t2 = 20000;
@@ -337,11 +374,8 @@ nodes.get('save-text').value = btoa(JSON.stringify(saveD));
 click('btn-import');
 click('tab-tech');
 check('提示显示每 30 发一只', txt('fire-note').indexOf('每 30 发') >= 0, txt('fire-note'));
-const bpBefore30 = parseInt(nodes.get('tech-list').children[0].children[1].textContent, 10);
 for (let i = 0; i < 30; i++) click('fire');
-check('30 发就出精英（间隔确实生效）',
-  parseInt(nodes.get('tech-list').children[0].children[1].textContent, 10) === bpBefore30 + 1,
-  bpBefore30 + ' -> ' + nodes.get('tech-list').children[0].children[1].textContent);
+check('30 发后计数器归零（间隔确实生效）', txt('fire-note').indexOf('还需 30 发') >= 0, txt('fire-note'));
 
 console.log('\n[10] 导出 / 非法存档 / 存储键');
 click('btn-export');

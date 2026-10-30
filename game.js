@@ -1,4 +1,4 @@
-/* 《末日残响 / Doomsday Echo》v0.7.0 —— 纯前端离线增量游戏（原创末日丧尸题材）
+/* 《末日残响 / Doomsday Echo》v0.8.1 —— 纯前端离线增量游戏（原创末日丧尸题材）
  *
  * 无依赖、无构建工具。想调数值，只改下面「配置区」即可。
  * 部署：整个文件夹丢给任意静态托管（如 Netlify Drop），
@@ -14,13 +14,21 @@
    *  配置区
    * ================================================================== */
 
-  var VERSION = 'v0.7.0';
+  var VERSION = 'v0.8.1';
   var SAVE_KEY = 'dse_save_v2';   // 键名不变：旧档缺新字段时按 0 补齐，不丢进度
   var AUTOSAVE_MS = 10000;        // 自动存档间隔
   var RENDER_MS = 100;            // 界面刷新节流（毫秒）
   var PRESTIGE_AT = 1e6;          // 单局累计赏金达到该值才能撤退重整
   var ELITE_EVERY = 40;           // 每 N 次开火来一只精英（v0.6.2 从 25 提到 40）
   var ELITE_MULT = 5;             // 精英赏金倍率
+
+  // 科技：偏后期功能，累计声望达到门槛才开放
+  var TECH_UNLOCK_PRESTIGE = 300; // 累计（不是余额）声望达到该值解锁科技与兑换
+  var BP_PRESTIGE_COST = 10;      // 兑换价：10 声望 = 1 蓝图（蓝图是更稀缺的货币）
+  var CLICK_BP_CHANCE = 0.002;    // 开火掉落蓝图的基础概率（0.2%，可被科技提升）
+
+  // 声望本身也是产能：每持有 1 点声望，全局产出 +0.1%（花掉会掉下来）
+  var PRESTIGE_BONUS_PER = 0.001;
 
   // 离线收益：v0.5.0 起必须先完成一次撤退重整才解锁
   var OFFLINE_LOCKED_UNTIL_PRESTIGE = true;
@@ -127,13 +135,12 @@
     { id:'l6', branch:'logi', name:'军工复合体', cost:240, kind:'auto',        mult:1.50, desc:'自动赏金 ×1.50' },
 
     { id:'b1', branch:'bio',  name:'尸群研究',   cost:4,   kind:'eliteReduce', value:10,   desc:'精英间隔 −10 发' },
-    { id:'b2', branch:'bio',  name:'基因样本',   cost:10,  kind:'click',       mult:1.10, desc:'单发伤害 ×1.10' },
+    { id:'b2', branch:'bio',  name:'遗体解剖',   cost:10,  kind:'dropRate',    value:0.004, desc:'开火掉落蓝图的概率 +0.4%' },
     { id:'b3', branch:'bio',  name:'诱饵战术',   cost:22,  kind:'eliteMult',   mult:2.00, desc:'精英赏金 ×2' },
     { id:'b4', branch:'bio',  name:'战场急救',   cost:48,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
     { id:'b5', branch:'bio',  name:'神经加速',   cost:108, kind:'click',       mult:1.30, desc:'单发伤害 ×1.30' },
     { id:'b6', branch:'bio',  name:'人类适应',   cost:240, kind:'all',         mult:1.50, desc:'单发与自动 ×1.50' }
   ];
-  var ELITE_BP = 1;        // 击杀精英获得的蓝图（v0.6.2 从 2 降到 1）
   var HORDE_SECONDS = 300; // 每隔多少秒来一波尸潮
 
   var UNITS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
@@ -195,6 +202,7 @@
       gear: {},
       offlineTier: 0,
       prestige: 0,      // 声望余额
+      prestigeTotal: 0, // 累计获得的声望（科技解锁门槛用这个，花掉也不减）
       prestigeCount: 0, // 撤退重整次数（>0 才解锁离线）
       runBase: 0,       // 上次重整时的累计赏金，用来算「本局产出」
       soldiers: soldiers,
@@ -252,6 +260,11 @@
     return 1 + soldierCount('engineer') * 0.08;
   }
 
+  // 持有声望的被动：1 + 声望 × 0.1%。花声望（招兵/换蓝图）会让它降下来
+  function prestigeMult() {
+    return 1 + Math.max(0, state.prestige || 0) * PRESTIGE_BONUS_PER;
+  }
+
   function soldierCost(s) {
     return Math.max(1, Math.ceil(s.baseCost * Math.pow(s.costMult, soldierCount(s.id))));
   }
@@ -301,13 +314,23 @@
     return ELITE_MULT * techProduct('eliteMult');
   }
 
+  // 科技是后期内容：累计声望（不是余额）达标才开放
+  function techUnlocked() {
+    return (state.prestigeTotal || 0) >= TECH_UNLOCK_PRESTIGE;
+  }
+
+  // 开火掉落蓝图的概率 = 基础 0.2% + 生物分支「遗体解剖」
+  function techDropRate() {
+    return CLICK_BP_CHANCE + techSum('dropRate');
+  }
+
   function getAutoRate() {
     var r = 0;
     for (var i = 0; i < WEAPONS.length; i++) {
       var w = WEAPONS[i];
       r += w.rate * (state.weapons[w.id] || 0);
     }
-    return r * globalMult() * armyAutoMult() * techAutoMult();
+    return r * globalMult() * armyAutoMult() * techAutoMult() * prestigeMult();
   }
 
   // 单发伤害 = (1 + Σ 持有数 × 单发伤害 + 穿甲弹加成) × Π(点击倍率) × 军队点击加成
@@ -323,7 +346,7 @@
       if (g.type === 'clickAdd' && lv > 0) { d += g.add * lv; }
       if (g.type === 'clickMult' && lv > 0) { d *= Math.pow(g.value, lv); }
     }
-    return d * armyClickMult() * techClickMult();
+    return d * armyClickMult() * techClickMult() * prestigeMult();
   }
 
   function weaponCost(w) {
@@ -418,13 +441,19 @@
     }
     addBounty(gain, 'click');
     floatText('+' + fmt(gain) + (crit ? '!' : ''));
+
     if (elite) {
-      state.blueprints = (state.blueprints || 0) + ELITE_BP;
-      toast('精英丧尸！赏金 ×' + fmt(eliteMult()) + '，蓝图 +' + ELITE_BP);
+      toast('精英丧尸！赏金 ×' + fmt(eliteMult()));
       if (ui.fire.classList) {
         ui.fire.classList.add('elite');
         setTimeout(function () { ui.fire.classList.remove('elite'); }, 320);
       }
+    }
+
+    // 开火有极低概率捡到蓝图（科技没解锁也照样累积，解锁后一次性可用）
+    if (Math.random() < techDropRate()) {
+      state.blueprints = (state.blueprints || 0) + 1;
+      floatText('+1 蓝图');
     }
     if (navigator && navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
     render();
@@ -514,18 +543,13 @@
   function openPrestigeModal() {
     if (!canPrestige()) { return; }
     var gain = prestigeGain();
-    var bp = prestigeBlueprints(gain);
     ui.prestigeText.textContent =
       '将失去：当前赏金 ' + fmt(state.bounty) +
       '、军火库全部等级、战术装备、补给档位。\n' +
-      '将得到：声望 +' + fmt(gain) + '，蓝图 +' + bp +
-      '（此前声望 ' + fmt(state.prestige) + '，蓝图 ' + fmt(state.blueprints) + '）。\n' +
+      '将得到：声望 +' + fmt(gain) +
+      '（此前声望 ' + fmt(state.prestige) + '，累计 ' + fmt(state.prestigeTotal || 0) + '）。\n' +
       '保留：士兵、军队等级、科技、生存等级、战报统计。';
     ui.prestigeModal.classList.remove('hidden');
-  }
-
-  function prestigeBlueprints(gain) {
-    return Math.floor(gain * 0.25) + 1;
   }
 
   function closePrestigeModal() {
@@ -535,9 +559,8 @@
   function doPrestige() {
     if (!canPrestige()) { closePrestigeModal(); return; }
     var gain = prestigeGain();
-    var bp = prestigeBlueprints(gain);
     state.prestige += gain;
-    state.blueprints = (state.blueprints || 0) + bp;
+    state.prestigeTotal = (state.prestigeTotal || 0) + gain;   // 累计声望：科技解锁看这个
     state.prestigeCount = (state.prestigeCount || 0) + 1;
     state.runBase = state.total;
     state.bounty = 0;
@@ -548,7 +571,7 @@
     closePrestigeModal();
     saveGame();
     render();
-    toast('撤退重整完成：声望 +' + gain + '，蓝图 +' + bp);
+    toast('撤退重整完成：声望 +' + gain);
   }
 
   /* ---------- 科技 ---------- */
@@ -562,9 +585,10 @@
     return out;
   }
 
-  // 'owned' | 'locked'（前置未研究）| 'ready' | 'poor'（蓝图不够）
+  // 'owned' | 'gated'（科技未解锁）| 'locked'（前置未研究）| 'ready' | 'poor'（蓝图不够）
   function techState(node) {
     if (techHas(node.id)) { return 'owned'; }
+    if (!techUnlocked()) { return 'gated'; }
     var list = techBranchNodes(node.branch);
     for (var i = 0; i < list.length; i++) {
       if (list[i].id !== node.id) { continue; }
@@ -572,6 +596,23 @@
       break;
     }
     return (state.blueprints || 0) >= node.cost ? 'ready' : 'poor';
+  }
+
+  // 声望 → 蓝图 兑换（科技解锁后才可用）
+  function buyBlueprints(n) {
+    if (!techUnlocked()) {
+      toast('累计声望 ' + TECH_UNLOCK_PRESTIGE + ' 后才能兑换');
+      return;
+    }
+    var cost = n * BP_PRESTIGE_COST;
+    if (state.prestige < cost) {
+      toast('声望不足：需要 ' + cost);
+      return;
+    }
+    state.prestige -= cost;
+    state.blueprints = (state.blueprints || 0) + n;
+    toast('用 ' + cost + ' 声望兑换了 ' + n + ' 蓝图');
+    render();
   }
 
   function researchTech(node) {
@@ -737,7 +778,7 @@
       Math.min(OFFLINE_MAX_HOURS, OFFLINE_TIERS[offlineTier()].hours + n * s.per) + ' 小时';
   }
 
-  // 科技页：蓝图概览 + 三分支 × 6 节点
+  // 科技页：蓝图概览 + 声望兑换 / 解锁门槛 + 三分支 × 6 节点
   function buildTech() {
     var box = ui.techList;
     box.innerHTML = '';
@@ -749,6 +790,36 @@
     ui.techTimer = el('span', 'army-hud-sub', '');
     hud.appendChild(ui.techTimer);
     box.appendChild(hud);
+
+    // 声望兑换（未解锁时显示为门槛提示）
+    var gate = el('div', 'card gate');
+    var gm = el('div', 'card-main');
+    var gt = el('div', 'card-title');
+    var gname = el('span', 'card-name', '声望兑换');
+    gt.appendChild(gname);
+    var gflag = el('span', 'card-owned', '');
+    gt.appendChild(gflag);
+    var gdesc = el('div', 'card-desc', '');
+    var gsub = el('div', 'card-rate', '');
+    gm.appendChild(gt);
+    gm.appendChild(gdesc);
+    gm.appendChild(gsub);
+
+    var gbtns = el('div', 'gate-btns');
+    var gb1 = el('button', 'mini-btn', '换 1');
+    var gb10 = el('button', 'mini-btn', '换 10');
+    gb1.type = 'button';
+    gb10.type = 'button';
+    gb1.addEventListener('click', function () { buyBlueprints(1); });
+    gb10.addEventListener('click', function () { buyBlueprints(10); });
+    gbtns.appendChild(gb1);
+    gbtns.appendChild(gb10);
+
+    gate.appendChild(el('div', 'card-icon', '💱'));
+    gate.appendChild(gm);
+    gate.appendChild(gbtns);
+    box.appendChild(gate);
+    ui.techGate = { row: gate, name: gname, flag: gflag, desc: gdesc, sub: gsub, b1: gb1, b10: gb10 };
 
     ui.techProg = {};
 
@@ -935,7 +1006,8 @@
     p.btn.classList.toggle('can', ready);
 
     ui.armyPrestige.textContent = fmt(state.prestige);
-    ui.armyLevel.textContent = '军队 Lv.' + armyLevel() + ' ｜ 兵力 ' + totalSoldiers();
+    ui.armyLevel.textContent = '军队 Lv.' + armyLevel() + ' ｜ 兵力 ' + totalSoldiers() +
+      ' ｜ 全局 +' + ((prestigeMult() - 1) * 100).toFixed(1) + '%';
 
     for (var si = 0; si < SOLDIERS.length; si++) {
       var so = SOLDIERS[si];
@@ -988,18 +1060,40 @@
     // 科技
     ui.techBp.textContent = fmt(state.blueprints || 0);
     var leftHorde = Math.max(0, HORDE_SECONDS - ((state.playTime || 0) - (state.lastHorde || 0)));
-    ui.techTimer.textContent = '尸潮 ' + Math.ceil(leftHorde) + ' 秒后';
+    ui.techTimer.textContent = '尸潮 ' + Math.ceil(leftHorde) + ' 秒 ｜ 掉率 ' +
+      (techDropRate() * 100).toFixed(1) + '%';
+
+    var tUnlocked = techUnlocked();
+    var gate = ui.techGate;
+    if (tUnlocked) {
+      gate.name.textContent = '声望兑换';
+      gate.flag.textContent = '已解锁';
+      gate.desc.textContent = BP_PRESTIGE_COST + ' 声望 = 1 蓝图';
+      gate.sub.textContent = '当前 ' + fmt(state.prestige) + ' 声望，可换 ' +
+        Math.floor(state.prestige / BP_PRESTIGE_COST) + ' 张';
+      gate.b1.disabled = state.prestige < BP_PRESTIGE_COST;
+      gate.b10.disabled = state.prestige < BP_PRESTIGE_COST * 10;
+    } else {
+      gate.name.textContent = '科技锁定';
+      gate.flag.textContent = '未解锁';
+      gate.desc.textContent = '累计声望 ' + fmt(state.prestigeTotal || 0) + ' / ' +
+        fmt(TECH_UNLOCK_PRESTIGE) + ' 后开放';
+      gate.sub.textContent = '蓝图会照常累积，解锁后一次性可用';
+      gate.b1.disabled = true;
+      gate.b10.disabled = true;
+    }
 
     for (var tn = 0; tn < TECH_NODES.length; tn++) {
       var node = TECH_NODES[tn];
       var tst = techState(node);
       node._flag.textContent = tst === 'owned' ? '已研究'
-        : (tst === 'locked' ? '需前置' : (tst === 'poor' ? '蓝图不足' : ''));
+        : (tst === 'gated' ? '未解锁'
+          : (tst === 'locked' ? '需前置' : (tst === 'poor' ? '蓝图不足' : '')));
       node._cost.textContent = tst === 'owned' ? '—' : fmt(node.cost);
       node._btn.disabled = tst !== 'ready';
       node._btn.classList.toggle('can', tst === 'ready');
       node._row.classList.toggle('done', tst === 'owned');
-      node._row.classList.toggle('locked', tst === 'locked');
+      node._row.classList.toggle('locked', tst === 'locked' || tst === 'gated');
     }
     for (var tb = 0; tb < TECH_BRANCHES.length; tb++) {
       var br0 = TECH_BRANCHES[tb];
@@ -1126,6 +1220,8 @@
 
     // v0.5.0 新增：声望 / 重整次数 / 本局基准 / 士兵（旧档缺字段按 0）
     merged.prestige = Math.max(0, Number(data.prestige) || 0);
+    // 老档没有累计声望：按当前余额兜底（只少不多，不会凭空解锁科技）
+    merged.prestigeTotal = Math.max(0, Number(data.prestigeTotal) || merged.prestige);
     merged.prestigeCount = Math.max(0, Number(data.prestigeCount) || 0);
     merged.runBase = Math.max(0, Number(data.runBase) || 0);
     if (merged.runBase > merged.total) { merged.runBase = 0; }
