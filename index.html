@@ -55,13 +55,13 @@
     <section class="tab-panel" id="panel-army">
       <h2>军队</h2>
       <div id="army-list" class="list"></div>
-      <p class="panel-hint">撤退重整会清空赏金与军火库，换取声望与士兵。v0.5.0 开放。</p>
+      <p class="panel-hint">撤退重整会清空赏金、军火库与补给档位，换取声望；声望用来招募士兵，士兵永久生效。首次重整后解锁离线收益。</p>
     </section>
 
     <section class="tab-panel" id="panel-tech">
       <h2>科技</h2>
       <div id="tech-list" class="list"></div>
-      <p class="panel-hint">击杀精英丧尸掉落蓝图。三分支科技树 v0.6.0 开放。</p>
+      <p class="panel-hint">蓝图来自击杀精英、每 5 分钟一次的尸潮，以及撤退重整。每个分支必须按顺序研究，节点永久保留。</p>
     </section>
 
     <section class="tab-panel" id="panel-log">
@@ -130,6 +130,18 @@
     <h3>生存等级</h3>
     <div id="realm-list" class="realm-list"></div>
     <p class="hint" id="realm-close">点击空白处关闭</p>
+  </div>
+</div>
+
+<!-- 撤退重整确认 -->
+<div class="modal hidden" id="prestige-modal">
+  <div class="modal-box">
+    <h3>撤退重整</h3>
+    <p id="prestige-text" class="prestige-text"></p>
+    <div class="modal-actions">
+      <button id="btn-prestige-cancel">再想想</button>
+      <button class="primary" id="btn-prestige-ok">确认重整</button>
+    </div>
   </div>
 </div>
 

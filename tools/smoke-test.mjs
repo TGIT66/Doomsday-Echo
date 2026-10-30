@@ -138,7 +138,8 @@ check('生存等级为幸存者', txt('realm') === '幸存者', txt('realm'));
 check('军火库共 9 把武器', nodes.get('weapons').children.length === 9, 'n=' + nodes.get('weapons').children.length);
 check('只显示 1 把武器', nodes.get('weapons').children.filter((c) => c.style.display !== 'none').length === 1);
 check('战术装备全部隐藏', nodes.get('gear').children.every((c) => c.style.display === 'none'));
-check('科技三分支', nodes.get('tech-list').children.length === 3, 'n=' + nodes.get('tech-list').children.length);
+check('科技页 = 蓝图条 + 3 分支 × 7', nodes.get('tech-list').children.length === 22,
+  'n=' + nodes.get('tech-list').children.length);
 check('战报统计初始为 0', txt('stat-manual') === '0' && txt('stat-auto') === '0' && txt('stat-total') === '0');
 check('精英进度提示', txt('fire-note').indexOf('下一只精英') >= 0, txt('fire-note'));
 
@@ -192,8 +193,8 @@ check('穿甲弹已解锁', gRow.style.display !== 'none', gRow.style.display);
 const gBtn = gRow.children[2];
 check('攒够 25 可买', gBtn.disabled === false, 'cost=' + gBtn.children[1].textContent);
 gBtn._handlers.click[0]();
-check('单发伤害 = 1 + 枪 1 + 穿甲弹 2 = 4', txt('click-power') === '4', txt('click-power'));
-check('等级显示 Lv.1', gRow.children[1].children[0].children[1].textContent === 'Lv.1',
+check('单发伤害 = (1 + 枪 1) × 穿甲弹 1.5 = 3', txt('click-power') === '3', txt('click-power'));
+check('穿甲弹是一次性装备', gRow.children[1].children[0].children[1].textContent === '已装备',
   gRow.children[1].children[0].children[1].textContent);
 
 console.log('\n[7] 底部 tab 切换');
@@ -203,29 +204,131 @@ check('军火库面板隐藏', nodes.get('panel-arsenal').classList.contains('ac
 click('tab-log');
 check('战报面板激活', nodes.get('panel-log').classList.contains('active'));
 
-console.log('\n[8] 撤退重整占位 + 存档往返');
-const save = { v: 2, bounty: 20000, total: 200000000, manual: 300000, auto: 900000, clicks: 500,
-  weapons: { pistol: 12, smg: 3 }, gear: { ammo: 2 }, offlineTier: 0, lastSeen: Date.now() };
-nodes.get('save-text').value = btoa(JSON.stringify(save));
+console.log('\n[8] 军队入口与离线门槛');
+const saveA = { v: 3, bounty: 5000, total: 500000, manual: 1000, auto: 499000, clicks: 50,
+  weapons: { pistol: 5 }, gear: {}, offlineTier: 0,
+  prestige: 0, prestigeCount: 0, runBase: 0, soldiers: {}, lastSeen: Date.now() };
+nodes.get('save-text').value = btoa(JSON.stringify(saveA));
 click('btn-import');
 check('导入成功', txt('save-hint').indexOf('成功') >= 0, txt('save-hint'));
-check('赏金保留', txt('bounty') === '20.00K', txt('bounty'));
-check('等级按累计判定（猎手）', txt('realm') === '猎手', txt('realm'));
-const pCard = nodes.get('army-list').children[0];
-check('撤退重整按钮可用', pCard.children[2].disabled === false, pCard.children[2].children[1].textContent);
-check('显示可重整', pCard.children[2].children[1].textContent === '可重整', pCard.children[2].children[1].textContent);
+click('tab-army');
+check('军队页 = 声望条 + 重整 + 4 兵种', nodes.get('army-list').children.length === 6,
+  'n=' + nodes.get('army-list').children.length);
+const pCard0 = nodes.get('army-list').children[1];
+check('未到 1e6 不能重整', pCard0.children[2].disabled === true, pCard0.children[2].children[1].textContent);
+check('重整按钮显示 —', pCard0.children[2].children[1].textContent === '—', pCard0.children[2].children[1].textContent);
 
-console.log('\n[8b] 营地补给');
+console.log('\n[8b] 离线未解锁');
 click('tab-log');
 const offRow = nodes.get('offline-list').children[0];
 const offLv = () => offRow.children[1].children[0].children[1].textContent;
-const offCost = () => offRow.children[2].children[1].textContent;
-check('初始 Lv.1', offLv() === 'Lv.1', offLv());
-check('达标后显示成本而非门槛', offCost().indexOf('开启') < 0, offCost());
-offRow.children[2]._handlers.click[0]();
-check('提升到 Lv.2', offLv() === 'Lv.2', offLv());
+const offDesc = () => offRow.children[1].children[1].textContent;
+check('离线显示未解锁', offLv() === '未解锁', offLv());
+check('提示需撤退重整', offDesc().indexOf('撤退重整') >= 0, offDesc());
+check('离线按钮禁用', offRow.children[2].disabled === true);
 
-console.log('\n[9] 导出 / 非法存档 / 存储键');
+console.log('\n[9] 声望与士兵');
+const saveB = { v: 3, bounty: 20000, total: 200000000, manual: 300000, auto: 900000, clicks: 500,
+  weapons: { pistol: 12, smg: 3 }, gear: { ammo: 2 }, offlineTier: 0,
+  prestige: 500, prestigeCount: 2, runBase: 0, soldiers: {}, lastSeen: Date.now() };
+nodes.get('save-text').value = btoa(JSON.stringify(saveB));
+click('btn-import');
+check('赏金保留', txt('bounty') === '20.00K', txt('bounty'));
+check('等级按累计判定（猎手）', txt('realm') === '猎手', txt('realm'));
+check('自动产出 = 4.2', txt('rate') === '+4.20 / 秒', txt('rate'));
+check('单发伤害 = (1+12+9) × 1.5 = 33', txt('click-power') === '33', txt('click-power'));
+click('tab-army');
+const hud = nodes.get('army-list').children[0];
+const pCard = nodes.get('army-list').children[1];
+const rookieRow = nodes.get('army-list').children[2];
+const engRow = nodes.get('army-list').children[3];
+const officerRow = nodes.get('army-list').children[5];
+check('声望显示 500', hud.children[1].textContent === '500', hud.children[1].textContent);
+check('军队等级提示 Lv.0', hud.children[2].textContent.indexOf('Lv.0') >= 0, hud.children[2].textContent);
+check('可重整', pCard.children[2].disabled === false);
+check('重整显示声望 +14', pCard.children[2].children[1].textContent === '声望 +14',
+  pCard.children[2].children[1].textContent);
+
+rookieRow.children[2]._handlers.click[0]();
+check('招募新兵后声望 -1', hud.children[1].textContent === '499', hud.children[1].textContent);
+check('新兵 ×1', rookieRow.children[1].children[0].children[1].textContent === '×1',
+  rookieRow.children[1].children[0].children[1].textContent);
+check('自动产出 ×1.03 = 4.33', txt('rate') === '+4.33 / 秒', txt('rate'));
+
+check('工兵首价 5', engRow.children[2].children[1].textContent === '5', engRow.children[2].children[1].textContent);
+engRow.children[2]._handlers.click[0]();
+check('招募工兵后声望 -5', hud.children[1].textContent === '494', hud.children[1].textContent);
+check('单发伤害 ×1.08 = 35.6', txt('click-power') === '35.6', txt('click-power'));
+
+console.log('\n[9b] 撤退重整');
+pCard.children[2]._handlers.click[0]();
+check('确认弹窗打开', nodes.get('prestige-modal').classList.contains('hidden') === false);
+check('弹窗列出将失去什么', txt('prestige-text').indexOf('将失去') >= 0, txt('prestige-text').slice(0, 20));
+nodes.get('btn-prestige-ok')._handlers.click[0]();
+check('弹窗关闭', nodes.get('prestige-modal').classList.contains('hidden') === true);
+check('赏金清零', txt('bounty') === '0', txt('bounty'));
+check('声望 494 + 14 = 508', hud.children[1].textContent === '508', hud.children[1].textContent);
+check('军火库归零', nodes.get('weapons').children[0].children[1].children[0].children[1].textContent === '×0',
+  nodes.get('weapons').children[0].children[1].children[0].children[1].textContent);
+check('累计不清零，等级仍是猎手', txt('realm') === '猎手', txt('realm'));
+check('单发伤害回落到 1.08', txt('click-power') === '1.08', txt('click-power'));
+check('自动产出归零', txt('rate') === '+0 / 秒', txt('rate'));
+check('重整后按钮变灰（本局产出不足）', pCard.children[2].disabled === true);
+
+console.log('\n[9c] 重整后离线解锁 + 军官 + 军队等级');
+click('tab-log');
+check('离线解锁 Lv.1', offLv() === 'Lv.1', offLv());
+check('上限 2 小时', offDesc().indexOf('2 小时') >= 0, offDesc());
+check('效率 50%', offDesc().indexOf('50%') >= 0, offDesc());
+
+click('tab-army');
+check('军官首价 25', officerRow.children[2].children[1].textContent === '25', officerRow.children[2].children[1].textContent);
+officerRow.children[2]._handlers.click[0]();
+check('军官 ×1', officerRow.children[1].children[0].children[1].textContent === '×1',
+  officerRow.children[1].children[0].children[1].textContent);
+check('军官把上限加到 3 小时', officerRow.children[1].children[2].textContent.indexOf('3 小时') >= 0,
+  officerRow.children[1].children[2].textContent);
+
+for (let i = 0; i < 9; i++) rookieRow.children[2]._handlers.click[0]();
+check('兵力 10+ 后升到军队 Lv.1', hud.children[2].textContent.indexOf('Lv.1') >= 0, hud.children[2].textContent);
+
+console.log('\n[9d] 科技');
+click('tab-tech');
+check('科技页 = 蓝图条 + 3 分支 × (标题 + 6 节点)', nodes.get('tech-list').children.length === 22,
+  'n=' + nodes.get('tech-list').children.length);
+const techHud = nodes.get('tech-list').children[0];
+check('重整给了 8 蓝图', techHud.children[1].textContent === '8', techHud.children[1].textContent);
+check('尸潮倒计时存在', techHud.children[2].textContent.indexOf('尸潮') >= 0, techHud.children[2].textContent);
+
+const f1Row = nodes.get('tech-list').children[2];
+const f2Row = nodes.get('tech-list').children[3];
+check('f1 可研究', f1Row.children[2].disabled === false, f1Row.children[2].children[1].textContent);
+check('f2 需前置',
+  f2Row.children[2].disabled === true && f2Row.children[1].children[0].children[1].textContent === '需前置',
+  f2Row.children[1].children[0].children[1].textContent);
+
+const dmgBeforeTech = parseFloat(txt('click-power'));
+f1Row.children[2]._handlers.click[0]();
+check('研究后蓝图 8 - 3 = 5', techHud.children[1].textContent === '5', techHud.children[1].textContent);
+check('单发伤害被 ×1.15 放大', parseFloat(txt('click-power')) > dmgBeforeTech,
+  dmgBeforeTech + ' -> ' + txt('click-power'));
+check('f1 标记已研究', f1Row.children[1].children[0].children[1].textContent === '已研究',
+  f1Row.children[1].children[0].children[1].textContent);
+check('f2 变为蓝图不足', f2Row.children[1].children[0].children[1].textContent === '蓝图不足',
+  f2Row.children[1].children[0].children[1].textContent);
+
+const bpBeforeElite = parseInt(techHud.children[1].textContent, 10);
+for (let i = 0; i < 25; i++) click('fire');
+check('击杀精英 +2 蓝图', parseInt(techHud.children[1].textContent, 10) === bpBeforeElite + 2,
+  bpBeforeElite + ' -> ' + techHud.children[1].textContent);
+
+const bpBeforeHorde = parseInt(techHud.children[1].textContent, 10);
+let t2 = 20000;
+for (let i = 0; i < 310; i++) { const cb = rafCb; t2 += 1000; cb(t2); }
+check('尸潮按时到达并给蓝图', parseInt(techHud.children[1].textContent, 10) > bpBeforeHorde,
+  bpBeforeHorde + ' -> ' + techHud.children[1].textContent);
+
+console.log('\n[10] 导出 / 非法存档 / 存储键');
 click('btn-export');
 const code1 = nodes.get('save-text').value;
 check('导出得到存档码', code1.length > 10, 'len=' + code1.length);
@@ -235,7 +338,7 @@ check('坏存档不崩溃且被拒绝', txt('save-hint').indexOf('无效') >= 0,
 check('存档写入新键名', store.has('dse_save_v2'));
 check('不再写旧题材的键名', store.has('lcz_save_v1') === false && store.has('lcz_save_v2') === false);
 
-console.log('\n[10] 切后台 / 回前台');
+console.log('\n[11] 切后台 / 回前台');
 document.hidden = true;
 (docHandlers.visibilitychange || []).forEach((f) => f());
 document.hidden = false;

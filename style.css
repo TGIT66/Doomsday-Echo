@@ -452,3 +452,53 @@ textarea{
 .realm-item.current .realm-idx,
 .realm-item.current .realm-item-name,
 .realm-item.current .realm-item-at{ color:var(--alert); font-weight:700; }
+
+/* ---------- 军队 ---------- */
+
+.army-hud{
+  display:flex; align-items:baseline; gap:10px;
+  padding:12px 14px;
+  border:1px solid rgba(211,63,73,.38);
+  border-radius:var(--radius);
+  background:linear-gradient(180deg, rgba(211,63,73,.12), rgba(211,63,73,.03));
+}
+.army-hud-label{ font-size:12px; letter-spacing:.18em; color:var(--muted); }
+.army-hud-value{
+  font-size:26px; font-weight:800;
+  color:var(--alert);
+  font-variant-numeric:tabular-nums;
+}
+.army-hud-sub{
+  margin-left:auto;
+  font-size:11px; color:var(--muted);
+  font-variant-numeric:tabular-nums;
+}
+
+.prestige-text{
+  white-space:pre-line;
+  line-height:1.7;
+  color:var(--text);
+}
+
+/* ---------- 科技 ---------- */
+
+.tech-hud{ margin-bottom:4px; }
+
+.tech-branch{
+  display:flex; align-items:center; gap:10px;
+  margin-top:18px;
+  padding:8px 4px 4px;
+  border-bottom:1px solid var(--line);
+}
+.tech-branch-icon{ font-size:18px; }
+.tech-branch-main{ flex:1 1 auto; min-width:0; }
+.tech-branch-name{ font-size:14px; font-weight:700; }
+.tech-branch-desc{ font-size:11px; color:var(--muted); }
+.tech-branch-prog{
+  flex:0 0 auto;
+  font-size:12px; color:var(--alert);
+  font-variant-numeric:tabular-nums;
+}
+
+.tech-node .card-icon{ font-size:15px; color:var(--blood); }
+.card.locked .card-name{ color:var(--muted); }
