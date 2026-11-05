@@ -1,0 +1,9 @@
+# 本地临时文件
+__pycache__/
+*.pyc
+
+# 数值模拟的可再生输出
+docs/balance/data.json
+
+.DS_Store
+Thumbs.db

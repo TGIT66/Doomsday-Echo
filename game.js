@@ -1,4 +1,4 @@
-/* 《末日残响 / Doomsday Echo》v0.10.0 —— 纯前端离线增量游戏（原创末日丧尸题材）
+/* 《末日残响 / Doomsday Echo》v0.11.0 —— 纯前端离线增量游戏（原创末日丧尸题材）
  *
  * 无依赖、无构建工具。想调数值，只改下面「配置区」即可。
  * 部署：整个文件夹丢给任意静态托管（如 Netlify Drop），
@@ -14,7 +14,7 @@
    *  配置区
    * ================================================================== */
 
-  var VERSION = 'v0.10.0';
+  var VERSION = 'v0.11.0';
   var SAVE_KEY = 'dse_save_v2';   // 键名不变：旧档缺新字段时按 0 补齐，不丢进度
   var AUTOSAVE_MS = 10000;        // 自动存档间隔
   var RENDER_MS = 100;            // 界面刷新节流（毫秒）
@@ -23,7 +23,7 @@
   var ELITE_MULT = 2;             // 非尸潮时的精英赏金倍率（v0.9.0 从 5 降到 2）
 
   // 尸潮：开火满 HORDE_CLICKS 发就触发，持续 HORDE_SECONDS 秒，结束后还要冷却 HORDE_COOLDOWN 秒。
-  //   持续期间：点击赏金 ×2、精英赏金 ×5、开火掉落蓝图的概率 ×5。
+  //   持续期间：点击赏金 ×2、精英赏金 ×5、开火掉落蓝图的概率 ×3。
   //   触发的那一发本身不算在尸潮内；尸潮进行中的开火不累计次数。
   //   冷却期间的开火**不算有效次数**，冷却走完才从 0 重新开始累计。
   //   v0.9.0 之前是「每 300 秒游玩时间白送一张蓝图」，现在改成限时增益窗口。
@@ -32,34 +32,38 @@
   var HORDE_COOLDOWN = 300;       // 尸潮结束后的冷却（秒），冷却期间开火不计数
   var HORDE_CLICK_MULT = 2;
   var HORDE_ELITE_MULT = 5;
-  var HORDE_BP_MULT = 5;
+  var HORDE_BP_MULT = 3;
 
   // 科技：偏后期功能，累计声望达到门槛才开放
   var TECH_UNLOCK_PRESTIGE = 300; // 累计（不是余额）声望达到该值解锁科技与兑换
-  var BP_PRESTIGE_COST = 10;      // 兑换价：10 声望 = 1 蓝图（蓝图是更稀缺的货币）
-  var CLICK_BP_CHANCE = 0.002;    // 开火掉落蓝图的基础概率（0.2%，可被科技提升）
+  var BP_PRESTIGE_COST = 25;      // v0.11.0：兑换价 10 → 25 起（蓝图是更稀缺的货币）
+  var BP_PRICE_GROWTH = 0.15;     // 每兑换 10 张，单张价格再 +15%（防止声望通胀后扫货）
+  var CLICK_BP_CHANCE = 0.001;    // 开火掉落蓝图的基础概率（v0.11.0：0.2% → 0.1%）
 
-  // 声望本身也是产能：每持有 1 点声望，全局产出 +0.1%（花掉会掉下来）
-  var PRESTIGE_BONUS_PER = 0.001;
+  // 声望本身也是产能：每持有 1 点声望，全局产出加一点点。
+  // v0.11.0 起改成三段递减（软顶），否则「线性乘区 × √收益」会自己起飞。
+  var PRESTIGE_BONUS_TIERS = [
+    { upTo: 500,      per: 0.001  },   // 0 ~ 500     每点 +0.1%
+    { upTo: 2000,     per: 0.0003 },   // 500 ~ 2000  每点 +0.03%
+    { upTo: Infinity, per: 0.0001 }    // 2000 以上   每点 +0.01%
+  ];
 
   // 离线收益：v0.5.0 起必须先完成一次撤退重整才解锁
   var OFFLINE_LOCKED_UNTIL_PRESTIGE = true;
-  var OFFLINE_BASE_EFF = 0.5;     // 解锁后的基础效率（军医往上加）
-  var OFFLINE_MAX_EFF = 1.5;      // 效率上限
-  var OFFLINE_MAX_HOURS = 24;     // 时长上限
+  var OFFLINE_BASE_EFF = 0.25;    // v0.11.0：50% → 25%（军医往上加）
+  var OFFLINE_MAX_EFF = 0.60;     // 效率上限 150% → 60%
+  var OFFLINE_MAX_HOURS = 8;      // 时长上限 24 → 8 小时
   var ARMY_LEVEL_SIZE = 10;       // 每多少名士兵升 1 级军队等级
 
   // 补给时长档位（随撤退重整重置）。第 0 档是默认，之后每档花掉「当前赏金的固定百分比」。
-  //   unlock  = 开启该档所需的当前赏金（逐档抬高）
-  //   costPct = 消耗当前赏金的比例
+  // v0.11.0：整条曲线压到 2~8 小时，和 8 小时总上限对齐
   var OFFLINE_TIERS = [
-    { hours:2,  unlock:0,    costPct:0    },
-    { hours:4,  unlock:1e4,  costPct:0.25 },
-    { hours:6,  unlock:1e5,  costPct:0.30 },
-    { hours:8,  unlock:1e7,  costPct:0.35 },
-    { hours:10, unlock:1e9,  costPct:0.40 },
-    { hours:12, unlock:1e11, costPct:0.45 },
-    { hours:16, unlock:1e13, costPct:0.50 }
+    { hours:2, unlock:0,    costPct:0    },
+    { hours:3, unlock:1e4,  costPct:0.25 },
+    { hours:4, unlock:1e5,  costPct:0.30 },
+    { hours:5, unlock:1e7,  costPct:0.35 },
+    { hours:6, unlock:1e9,  costPct:0.40 },
+    { hours:8, unlock:1e11, costPct:0.50 }
   ];
 
   // 士兵：消耗声望，价格逐次 ×1.5
@@ -69,43 +73,36 @@
       desc:'每个：自动赏金 +3%' },
     { id:'engineer', name:'工兵', icon:'🔧', baseCost:5,  costMult:1.5, max:Infinity, effect:'click',    per:0.08,
       desc:'每个：单发伤害 +8%' },
-    { id:'medic',    name:'军医', icon:'⛑️', baseCost:10, costMult:1.5, max:50,       effect:'offEff',   per:0.02,
-      desc:'每个：离线效率 +2%' },
-    { id:'officer',  name:'军官', icon:'🎖️', baseCost:25, costMult:1.5, max:12,       effect:'offHours', per:1,
-      desc:'每个：离线上限 +1 小时' }
+    { id:'medic',    name:'军医', icon:'⛑️', baseCost:10, costMult:1.5, max:25,       effect:'offEff',   per:0.01,
+      desc:'每个：离线效率 +1%' },
+    { id:'officer',  name:'军官', icon:'🎖️', baseCost:25, costMult:1.5, max:4,        effect:'offHours', per:0.5,
+      desc:'每个：离线上限 +0.5 小时' }
   ];
 
   // 军火库：成本 = baseCost * costMult^已拥有数量
   //   rate = 每秒自动赏金；dmg = 每持有一把提供的单发伤害
-  //   v0.6.2 把点伤整体压到原来的 0.6 倍（手枪已是下限，保持 1）
+  // v0.11.0：成本指数逐档抬高（1.15 → 1.23），后期档位的 rate 再压到 90%，
+  //          让「回本时间」随档位单调变长——后期不再是越换越便宜。
   var WEAPONS = [
-    { id:'pistol',   name:'手枪',       icon:'🔫', desc:'警局里唯一还能上膛的东西', baseCost:15,         costMult:1.15, rate:0.1,    dmg:1 },
-    { id:'smg',      name:'冲锋枪',     icon:'🔥', desc:'从便利店保安手里接管',     baseCost:150,        costMult:1.15, rate:1,      dmg:2 },
-    { id:'shotgun',  name:'霰弹枪',     icon:'💥', desc:'近距离一枪一片',           baseCost:1700,       costMult:1.15, rate:12,     dmg:7 },
-    { id:'rifle',    name:'突击步枪',   icon:'🎖️', desc:'军队制式，弹药管够',       baseCost:20000,      costMult:1.15, rate:150,    dmg:36 },
-    { id:'sniper',   name:'狙击步枪',   icon:'🎯', desc:'五公里外点名',             baseCost:250000,     costMult:1.15, rate:2000,   dmg:180 },
-    { id:'flamer',   name:'火焰喷射器', icon:'🧯', desc:'清场利器，也烧掉了退路',   baseCost:3000000,    costMult:1.15, rate:25000,  dmg:900 },
-    { id:'launcher', name:'榴弹发射器', icon:'🧨', desc:'把整条街变成弹坑',         baseCost:40000000,   costMult:1.15, rate:350000, dmg:4800 },
-    { id:'railgun',  name:'电磁炮',     icon:'⚡', desc:'避难所自研，一发耗三天电', baseCost:500000000,  costMult:1.15, rate:5000000, dmg:24000 },
-    { id:'orbital',  name:'轨道炮',     icon:'🛰️', desc:'天基武器，开火要国会签字', baseCost:7000000000, costMult:1.15, rate:80000000, dmg:120000 }
+    { id:'pistol',   name:'手枪',       icon:'🔫', desc:'警局里唯一还能上膛的东西', baseCost:15,         costMult:1.15, rate:0.1,      dmg:1 },
+    { id:'smg',      name:'冲锋枪',     icon:'🔥', desc:'从便利店保安手里接管',     baseCost:150,        costMult:1.16, rate:0.99,     dmg:2 },
+    { id:'shotgun',  name:'霰弹枪',     icon:'💥', desc:'近距离一枪一片',           baseCost:1700,       costMult:1.17, rate:11.7,     dmg:7 },
+    { id:'rifle',    name:'突击步枪',   icon:'🎖️', desc:'军队制式，弹药管够',       baseCost:20000,      costMult:1.18, rate:144,      dmg:36 },
+    { id:'sniper',   name:'狙击步枪',   icon:'🎯', desc:'五公里外点名',             baseCost:250000,     costMult:1.19, rate:1900,     dmg:180 },
+    { id:'flamer',   name:'火焰喷射器', icon:'🧯', desc:'清场利器，也烧掉了退路',   baseCost:3000000,    costMult:1.20, rate:23400,    dmg:900 },
+    { id:'launcher', name:'榴弹发射器', icon:'🧨', desc:'把整条街变成弹坑',         baseCost:40000000,   costMult:1.21, rate:324000,   dmg:4800 },
+    { id:'railgun',  name:'电磁炮',     icon:'⚡', desc:'避难所自研，一发耗三天电', baseCost:500000000,  costMult:1.22, rate:4560000,  dmg:24000 },
+    { id:'orbital',  name:'轨道炮',     icon:'🛰️', desc:'天基武器，开火要国会签字', baseCost:7000000000, costMult:1.23, rate:72000000, dmg:120000 }
   ];
 
-  // 战术装备：type = clickMult / globalMult（clickAdd 仍支持，只是目前没有装备用它）
-  var GEAR = [
-    { id:'ammo',   name:'穿甲弹',     icon:'🔩', type:'clickMult',  baseCost:25,      costMult:1,   max:1, value:1.5,
-      desc:function () { return '单发伤害 ×1.5'; } },
-    { id:'supp',   name:'消音器',     icon:'🔇', type:'clickMult',  baseCost:500,     costMult:1,   max:1, value:2,
-      desc:function () { return '单发伤害 ×2'; } },
-    { id:'vest',   name:'战术背心',   icon:'🦺', type:'globalMult', baseCost:2500,    costMult:1,   max:1, value:1.5,
-      desc:function () { return '自动赏金 ×1.5'; } },
-    { id:'helmet', name:'军用头盔',   icon:'🪖', type:'clickMult',  baseCost:12000,   costMult:1,   max:1, value:2,
-      desc:function () { return '单发伤害 ×2'; } },
-    { id:'drone',  name:'侦察无人机', icon:'🛸', type:'globalMult', baseCost:60000,   costMult:1,   max:1, value:1.5,
-      desc:function () { return '自动赏金 ×1.5'; } },
-    { id:'sat',    name:'卫星链路',   icon:'📡', type:'globalMult', baseCost:300000,  costMult:1,   max:1, value:2,
-      desc:function () { return '自动赏金 ×2'; } },
-    { id:'ap',     name:'反器材弹',   icon:'🧿', type:'clickMult',  baseCost:1500000, costMult:1,   max:1, value:3,
-      desc:function () { return '单发伤害 ×3'; } }
+  // 战术装备 v0.11.0 → 军械里程碑：
+  //   某把武器持有到 10 / 25 / 50 / 100 把，就永久解锁一档加成。
+  //   auto / click 是**加法桶**（不跟科技乘区连乘），rate / dmg 只作用于这把武器自身。
+  var WEAPON_MILESTONES = [
+    { at:10,  label:'班组协同', auto:0.20, click:0.30, rate:1.30, dmg:1.20 },
+    { at:25,  label:'批量列装', auto:0.30, click:0.40, rate:1.50, dmg:1.35 },
+    { at:50,  label:'制式改装', auto:0.40, click:0.50, rate:1.70, dmg:1.50 },
+    { at:100, label:'王牌装备', auto:0.60, click:0.70, rate:2.00, dmg:1.70 }
   ];
 
   // 生存等级：按「累计赏金」解锁（跨周目不清零）
@@ -131,27 +128,28 @@
 
   // kind: click / auto / all / off(离线效率加法) / crit(暴击率加法) /
   //       eliteReduce(精英间隔减少) / eliteMult(精英赏金乘算)
+  // v0.11.0：全节点成本 ×3（总蓝图 1296 → 3888），把科技轴从 3 小时拉长到 19 小时
   var TECH_NODES = [
-    { id:'f1', branch:'fire', name:'膛线优化',   cost:4,   kind:'click',       mult:1.15, desc:'单发伤害 ×1.15' },
-    { id:'f2', branch:'fire', name:'高爆弹头',   cost:10,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
-    { id:'f3', branch:'fire', name:'弹道计算',   cost:22,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
-    { id:'f4', branch:'fire', name:'暴击训练',   cost:48,  kind:'crit',        value:0.15, desc:'15% 概率暴击（伤害 ×3）' },
-    { id:'f5', branch:'fire', name:'重武器许可', cost:108, kind:'click',       mult:1.25, desc:'单发伤害 ×1.25' },
-    { id:'f6', branch:'fire', name:'天基火控',   cost:240, kind:'click',       mult:1.50, desc:'单发伤害 ×1.50' },
+    { id:'f1', branch:'fire', name:'膛线优化',   cost:12,  kind:'click',       mult:1.15, desc:'单发伤害 ×1.15' },
+    { id:'f2', branch:'fire', name:'高爆弹头',   cost:30,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
+    { id:'f3', branch:'fire', name:'弹道计算',   cost:66,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
+    { id:'f4', branch:'fire', name:'暴击训练',   cost:144, kind:'crit',        value:0.15, desc:'15% 概率暴击（伤害 ×3）' },
+    { id:'f5', branch:'fire', name:'重武器许可', cost:324, kind:'click',       mult:1.25, desc:'单发伤害 ×1.25' },
+    { id:'f6', branch:'fire', name:'天基火控',   cost:720, kind:'click',       mult:1.50, desc:'单发伤害 ×1.50' },
 
-    { id:'l1', branch:'logi', name:'补给线',     cost:4,   kind:'auto',        mult:1.15, desc:'自动赏金 ×1.15' },
-    { id:'l2', branch:'logi', name:'弹药工厂',   cost:10,  kind:'auto',        mult:1.20, desc:'自动赏金 ×1.20' },
-    { id:'l3', branch:'logi', name:'野战医院',   cost:22,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
-    { id:'l4', branch:'logi', name:'铁路网',     cost:48,  kind:'auto',        mult:1.25, desc:'自动赏金 ×1.25' },
-    { id:'l5', branch:'logi', name:'战时经济',   cost:108, kind:'auto',        mult:1.30, desc:'自动赏金 ×1.30' },
-    { id:'l6', branch:'logi', name:'军工复合体', cost:240, kind:'auto',        mult:1.50, desc:'自动赏金 ×1.50' },
+    { id:'l1', branch:'logi', name:'补给线',     cost:12,  kind:'auto',        mult:1.15, desc:'自动赏金 ×1.15' },
+    { id:'l2', branch:'logi', name:'弹药工厂',   cost:30,  kind:'auto',        mult:1.20, desc:'自动赏金 ×1.20' },
+    { id:'l3', branch:'logi', name:'野战医院',   cost:66,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
+    { id:'l4', branch:'logi', name:'铁路网',     cost:144, kind:'auto',        mult:1.25, desc:'自动赏金 ×1.25' },
+    { id:'l5', branch:'logi', name:'战时经济',   cost:324, kind:'auto',        mult:1.30, desc:'自动赏金 ×1.30' },
+    { id:'l6', branch:'logi', name:'军工复合体', cost:720, kind:'auto',        mult:1.50, desc:'自动赏金 ×1.50' },
 
-    { id:'b1', branch:'bio',  name:'尸群研究',   cost:4,   kind:'eliteReduce', value:10,   desc:'精英间隔 −10 发' },
-    { id:'b2', branch:'bio',  name:'遗体解剖',   cost:10,  kind:'dropRate',    value:0.004, desc:'开火掉落蓝图的概率 +0.4%' },
-    { id:'b3', branch:'bio',  name:'诱饵战术',   cost:22,  kind:'eliteMult',   mult:2.00, desc:'精英赏金 ×2' },
-    { id:'b4', branch:'bio',  name:'战场急救',   cost:48,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
-    { id:'b5', branch:'bio',  name:'神经加速',   cost:108, kind:'click',       mult:1.30, desc:'单发伤害 ×1.30' },
-    { id:'b6', branch:'bio',  name:'人类适应',   cost:240, kind:'all',         mult:1.50, desc:'单发与自动 ×1.50' }
+    { id:'b1', branch:'bio',  name:'尸群研究',   cost:12,  kind:'eliteReduce', value:10,   desc:'精英间隔 −10 发' },
+    { id:'b2', branch:'bio',  name:'遗体解剖',   cost:30,  kind:'dropRate',    value:0.002, desc:'开火掉落蓝图的概率 +0.2%' },
+    { id:'b3', branch:'bio',  name:'诱饵战术',   cost:66,  kind:'eliteMult',   mult:2.00, desc:'精英赏金 ×2' },
+    { id:'b4', branch:'bio',  name:'战场急救',   cost:144, kind:'off',         value:0.10, desc:'离线效率 +10%' },
+    { id:'b5', branch:'bio',  name:'神经加速',   cost:324, kind:'click',       mult:1.30, desc:'单发伤害 ×1.30' },
+    { id:'b6', branch:'bio',  name:'人类适应',   cost:720, kind:'all',         mult:1.50, desc:'单发与自动 ×1.50' }
   ];
   /* 尸潮时长 HORDE_SECONDS 定义在顶部配置区（v0.9.0 起是 120 秒的限时增益窗口） */
 
@@ -211,7 +209,6 @@
       auto: 0,          // 累计自动赏金（含离线）
       clicks: 0,
       weapons: weapons,
-      gear: {},
       offlineTier: 0,
       prestige: 0,      // 声望余额
       prestigeTotal: 0, // 累计获得的声望（科技解锁门槛用这个，花掉也不减）
@@ -219,6 +216,7 @@
       runBase: 0,       // 上次重整时的累计赏金，用来算「本局产出」
       soldiers: soldiers,
       blueprints: 0,    // 科技点
+      bpBought: 0,      // v0.11.0：用声望兑换过的蓝图张数（兑换价按它阶梯上涨）
       tech: {},         // 已研究的节点 id -> 1
       playTime: 0,      // 累计游玩秒数（离线不计）
       hordeProgress: 0, // 距离下一次尸潮还差几发（只有「不在尸潮中、也不在冷却中」才累加）
@@ -239,13 +237,48 @@
    *  数值计算
    * ================================================================== */
 
-  function globalMult() {
-    var m = 1;
-    for (var i = 0; i < GEAR.length; i++) {
-      var g = GEAR[i];
-      var lv = state.gear[g.id] || 0;
-      if (g.type === 'globalMult' && lv > 0) { m *= Math.pow(g.value, lv); }
+  /* ---------- 军械里程碑（v0.11.0 取代战术装备） ---------- */
+
+  function milestoneHits(n) {
+    var out = [];
+    for (var i = 0; i < WEAPON_MILESTONES.length; i++) {
+      if (n >= WEAPON_MILESTONES[i].at) { out.push(WEAPON_MILESTONES[i]); }
     }
+    return out;
+  }
+
+  function nextMilestone(n) {
+    for (var i = 0; i < WEAPON_MILESTONES.length; i++) {
+      if (n < WEAPON_MILESTONES[i].at) { return WEAPON_MILESTONES[i]; }
+    }
+    return null;
+  }
+
+  // 加法桶：所有已达成里程碑的 auto / click 加成直接相加，不参与连乘
+  function milestoneSum(key) {
+    var s = 0;
+    for (var i = 0; i < WEAPONS.length; i++) {
+      var hits = milestoneHits(state.weapons[WEAPONS[i].id] || 0);
+      for (var j = 0; j < hits.length; j++) { s += hits[j][key]; }
+    }
+    return s;
+  }
+
+  function milestoneAutoMult() { return 1 + milestoneSum('auto'); }
+  function milestoneClickMult() { return 1 + milestoneSum('click'); }
+
+  // 只作用于这一把武器自身的里程碑倍率
+  function weaponMilestoneRate(w) {
+    var hits = milestoneHits(state.weapons[w.id] || 0);
+    var m = 1;
+    for (var i = 0; i < hits.length; i++) { m *= hits[i].rate; }
+    return m;
+  }
+
+  function weaponMilestoneDmg(w) {
+    var hits = milestoneHits(state.weapons[w.id] || 0);
+    var m = 1;
+    for (var i = 0; i < hits.length; i++) { m *= hits[i].dmg; }
     return m;
   }
 
@@ -274,9 +307,20 @@
     return 1 + soldierCount('engineer') * 0.08;
   }
 
-  // 持有声望的被动：1 + 声望 × 0.1%。花声望（招兵/换蓝图）会让它降下来
+  // 持有声望的被动：分段递减（软顶）。花声望（招兵/换蓝图）会让它降下来。
+  // v0.11.0 之前是 1 + 声望 × 0.1% 不封顶，会和 √ 收益形成自加速。
   function prestigeMult() {
-    return 1 + Math.max(0, state.prestige || 0) * PRESTIGE_BONUS_PER;
+    var p = Math.max(0, state.prestige || 0);
+    var m = 1;
+    var prev = 0;
+    for (var i = 0; i < PRESTIGE_BONUS_TIERS.length; i++) {
+      var t = PRESTIGE_BONUS_TIERS[i];
+      var seg = Math.min(p, t.upTo) - prev;
+      if (seg > 0) { m += seg * t.per; }
+      prev = t.upTo;
+      if (p <= t.upTo) { break; }
+    }
+    return m;
   }
 
   function soldierCost(s) {
@@ -370,46 +414,35 @@
     return (state.prestigeTotal || 0) >= TECH_UNLOCK_PRESTIGE;
   }
 
-  // 开火掉落蓝图的概率 = 基础 0.2% + 生物分支「遗体解剖」
+  // 开火掉落蓝图的概率 = 基础 0.1% + 生物分支「遗体解剖」
   function techDropRate() {
     return CLICK_BP_CHANCE + techSum('dropRate');
   }
 
-  function getAutoRate() {
+  // withPrestige = false 时先不乘声望乘区（离线结算用：v0.11.0 起离线只算基础产出）
+  function getAutoRate(withPrestige) {
     var r = 0;
     for (var i = 0; i < WEAPONS.length; i++) {
       var w = WEAPONS[i];
-      r += w.rate * (state.weapons[w.id] || 0);
+      r += w.rate * weaponMilestoneRate(w) * (state.weapons[w.id] || 0);
     }
-    return r * globalMult() * armyAutoMult() * techAutoMult() * prestigeMult();
+    var m = milestoneAutoMult() * armyAutoMult() * techAutoMult();
+    if (withPrestige !== false) { m *= prestigeMult(); }
+    return r * m;
   }
 
-  // 单发伤害 = (1 + Σ 持有数 × 单发伤害 + 穿甲弹加成) × Π(点击倍率) × 军队点击加成
+  // 单发伤害 = (1 + Σ 持有数 × 单发伤害 × 该武器里程碑) × Σ里程碑点击桶 × 军队点击加成
   function getClickDamage() {
     var d = 1;
     for (var i = 0; i < WEAPONS.length; i++) {
       var w = WEAPONS[i];
-      d += w.dmg * (state.weapons[w.id] || 0);
+      d += w.dmg * weaponMilestoneDmg(w) * (state.weapons[w.id] || 0);
     }
-    for (var j = 0; j < GEAR.length; j++) {
-      var g = GEAR[j];
-      var lv = state.gear[g.id] || 0;
-      if (g.type === 'clickAdd' && lv > 0) { d += g.add * lv; }
-      if (g.type === 'clickMult' && lv > 0) { d *= Math.pow(g.value, lv); }
-    }
-    return d * armyClickMult() * techClickMult() * prestigeMult();
+    return d * milestoneClickMult() * armyClickMult() * techClickMult() * prestigeMult();
   }
 
   function weaponCost(w) {
     return Math.ceil(w.baseCost * Math.pow(w.costMult, state.weapons[w.id] || 0));
-  }
-
-  function gearCost(g) {
-    return Math.ceil(g.baseCost * Math.pow(g.costMult, state.gear[g.id] || 0));
-  }
-
-  function gearMaxed(g) {
-    return (state.gear[g.id] || 0) >= g.max;
   }
 
   function offlineTier() {
@@ -423,18 +456,18 @@
     return !OFFLINE_LOCKED_UNTIL_PRESTIGE || (state.prestigeCount || 0) > 0;
   }
 
-  // 上限 = 补给档位 + 军医/军官加成，封顶 24 小时
+  // 上限 = 补给档位 + 军官 × per，封顶 OFFLINE_MAX_HOURS（v0.11.0：8 小时）
   function offlineCapHours() {
     if (!offlineUnlocked()) { return 0; }
-    var h = OFFLINE_TIERS[offlineTier()].hours + soldierCount('officer');
+    var h = OFFLINE_TIERS[offlineTier()].hours + soldierCount('officer') * SOLDIERS[3].per;
     return Math.min(OFFLINE_MAX_HOURS, h);
   }
 
-  // 效率 = 50% 基础 + 军医每人 2% + 科技节点，封顶 150%
+  // 效率 = 25% 基础 + 军医每人 1% + 科技节点，封顶 60%
   function offlineEfficiency() {
     if (!offlineUnlocked()) { return 0; }
     return Math.min(OFFLINE_MAX_EFF,
-      OFFLINE_BASE_EFF + soldierCount('medic') * 0.02 + techOffBonus());
+      OFFLINE_BASE_EFF + soldierCount('medic') * SOLDIERS[2].per + techOffBonus());
   }
 
   function offlineNextTier() {
@@ -540,17 +573,15 @@
     var cost = weaponBulkCost(w, n);
     if (state.bounty < cost) { return; }
     state.bounty -= cost;
-    state.weapons[w.id] = (state.weapons[w.id] || 0) + n;
-    render();
-  }
-
-  function buyGear(g) {
-    if (gearMaxed(g)) { return; }
-    var cost = gearCost(g);
-    if (state.bounty < cost) { return; }
-    state.bounty -= cost;
-    state.gear[g.id] = (state.gear[g.id] || 0) + 1;
-    toast('已装备：' + g.name);
+    var before = state.weapons[w.id] || 0;
+    state.weapons[w.id] = before + n;
+    // 跨过里程碑时给个明确反馈（否则玩家只会觉得数值莫名其妙变大）
+    for (var i = 0; i < WEAPON_MILESTONES.length; i++) {
+      var m = WEAPON_MILESTONES[i];
+      if (before < m.at && state.weapons[w.id] >= m.at) {
+        toast(w.name + ' ×' + m.at + '：' + m.label);
+      }
+    }
     render();
   }
 
@@ -607,7 +638,7 @@
     var gain = prestigeGain();
     ui.prestigeText.textContent =
       '将失去：当前赏金 ' + fmt(state.bounty) +
-      '、军火库全部等级、战术装备、补给档位。\n' +
+      '、军火库全部等级、军械里程碑、补给档位。\n' +
       '将得到：声望 +' + fmt(gain) +
       '（此前声望 ' + fmt(state.prestige) + '，累计 ' + fmt(state.prestigeTotal || 0) + '）。\n' +
       '保留：士兵、军队等级、科技、生存等级、战报统计。';
@@ -627,7 +658,6 @@
     state.runBase = state.total;
     state.bounty = 0;
     for (var i = 0; i < WEAPONS.length; i++) { state.weapons[WEAPONS[i].id] = 0; }
-    for (var j = 0; j < GEAR.length; j++) { state.gear[GEAR[j].id] = 0; }
     state.offlineTier = 0;
     state.lastSeen = Date.now();
     closePrestigeModal();
@@ -661,19 +691,34 @@
   }
 
   // 声望 → 蓝图 兑换（科技解锁后才可用）
+  // v0.11.0：单价随已兑换张数阶梯上涨，防止声望通胀后一口气扫空科技树
+  function bpPriceAt(index) {
+    return Math.ceil(BP_PRESTIGE_COST * (1 + BP_PRICE_GROWTH * Math.floor(index / 10)));
+  }
+
+  function bpPriceNow() { return bpPriceAt(state.bpBought || 0); }
+
+  function bpBatchCost(n) {
+    var total = 0;
+    var bought = state.bpBought || 0;
+    for (var i = 0; i < n; i++) { total += bpPriceAt(bought + i); }
+    return total;
+  }
+
   function buyBlueprints(n) {
     if (!techUnlocked()) {
       toast('累计声望 ' + TECH_UNLOCK_PRESTIGE + ' 后才能兑换');
       return;
     }
-    var cost = n * BP_PRESTIGE_COST;
+    var cost = bpBatchCost(n);
     if (state.prestige < cost) {
-      toast('声望不足：需要 ' + cost);
+      toast('声望不足：需要 ' + fmt(cost));
       return;
     }
     state.prestige -= cost;
+    state.bpBought = (state.bpBought || 0) + n;
     state.blueprints = (state.blueprints || 0) + n;
-    toast('用 ' + cost + ' 声望兑换了 ' + n + ' 蓝图');
+    toast('用 ' + fmt(cost) + ' 声望兑换了 ' + n + ' 蓝图');
     render();
   }
 
@@ -703,9 +748,11 @@
         var owned = el('span', 'card-owned', '×0');
         title.appendChild(owned);
         var rate = el('div', 'card-rate', '');
+        var ms = el('div', 'card-ms', '');
         main.appendChild(title);
         main.appendChild(el('div', 'card-desc', w.desc));
         main.appendChild(rate);
+        main.appendChild(ms);
 
         var btn = el('button', 'buy-btn');
         btn.type = 'button';
@@ -720,40 +767,9 @@
         row.appendChild(btn);
         box.appendChild(row);
 
-        w._row = row; w._owned = owned; w._rate = rate; w._btn = btn; w._cost = cost; w._label = label;
+        w._row = row; w._owned = owned; w._rate = rate; w._ms = ms;
+        w._btn = btn; w._cost = cost; w._label = label;
       })(WEAPONS[i]);
-    }
-  }
-
-  function buildGear() {
-    var box = ui.gear;
-    box.innerHTML = '';
-    for (var i = 0; i < GEAR.length; i++) {
-      (function (g) {
-        var row = el('div', 'card');
-        var main = el('div', 'card-main');
-        var title = el('div', 'card-title');
-        title.appendChild(el('span', 'card-name', g.name));
-        var lvEl = el('span', 'card-owned', '');
-        title.appendChild(lvEl);
-        var desc = el('div', 'card-desc', '');
-        main.appendChild(title);
-        main.appendChild(desc);
-
-        var btn = el('button', 'buy-btn');
-        btn.type = 'button';
-        btn.appendChild(el('span', 'buy-label', g.max > 1 ? '改装' : '装备'));
-        var cost = el('span', 'buy-cost', '');
-        btn.appendChild(cost);
-        btn.addEventListener('click', function () { buyGear(g); });
-
-        row.appendChild(el('div', 'card-icon', g.icon));
-        row.appendChild(main);
-        row.appendChild(btn);
-        box.appendChild(row);
-
-        g._row = row; g._owned = lvEl; g._desc = desc; g._btn = btn; g._cost = cost;
-      })(GEAR[i]);
     }
   }
 
@@ -1053,28 +1069,22 @@
       w._owned.textContent = '×' + owned;
       w._label.textContent = bulkN > 1 ? '获取 ×' + bulkN : '获取';
       w._cost.textContent = fmt(cost);
-      w._rate.textContent = '单发 +' + fmt(w.dmg) + ' ｜ 自动 +' + fmt(w.rate * globalMult()) + ' / 秒';
+      w._rate.textContent = '单发 +' + fmt(w.dmg * weaponMilestoneDmg(w)) +
+        ' ｜ 自动 +' + fmt(w.rate * weaponMilestoneRate(w) * milestoneAutoMult()) + ' / 秒';
+      var nm = nextMilestone(owned);
+      if (nm) {
+        var leftN = nm.at - owned;
+        w._ms.textContent = '下一档 ×' + nm.at + '：自动 +' + Math.round(nm.auto * 100) +
+          '% ｜ 单发 +' + Math.round(nm.click * 100) + '%（还差 ' + leftN + ' 把）';
+      } else {
+        w._ms.textContent = '里程碑已满：10 / 25 / 50 / 100 全部达成';
+      }
+      w._ms.classList.toggle('done', !nm);
       w._btn.disabled = state.bounty < cost;
       w._btn.classList.toggle('can', state.bounty >= cost);
     }
     ui.bulk1.classList.toggle('active', bulkN === 1);
     ui.bulk10.classList.toggle('active', bulkN === 10);
-
-    for (var j = 0; j < GEAR.length; j++) {
-      var g = GEAR[j];
-      var visible2 = state.total >= revealAt(GEAR, j);
-      g._row.style.display = visible2 ? '' : 'none';
-      if (!visible2) { continue; }
-      var lv = state.gear[g.id] || 0;
-      var gCost = gearCost(g);
-      var maxed = gearMaxed(g);
-      g._owned.textContent = g.max > 1 ? 'Lv.' + lv : (lv > 0 ? '已装备' : '');
-      g._desc.textContent = g.desc(lv);
-      g._cost.textContent = maxed ? '已满级' : fmt(gCost);
-      g._btn.disabled = maxed || state.bounty < gCost;
-      g._btn.classList.toggle('can', !maxed && state.bounty >= gCost);
-      g._row.classList.toggle('done', maxed);
-    }
 
     // 军队：撤退重整 + 士兵
     var p = ui.prestige;
@@ -1151,13 +1161,15 @@
     var tUnlocked = techUnlocked();
     var gate = ui.techGate;
     if (tUnlocked) {
+      var unit = bpPriceNow();
       gate.name.textContent = '声望兑换';
       gate.flag.textContent = '已解锁';
-      gate.desc.textContent = BP_PRESTIGE_COST + ' 声望 = 1 蓝图';
-      gate.sub.textContent = '当前 ' + fmt(state.prestige) + ' 声望，可换 ' +
-        Math.floor(state.prestige / BP_PRESTIGE_COST) + ' 张';
-      gate.b1.disabled = state.prestige < BP_PRESTIGE_COST;
-      gate.b10.disabled = state.prestige < BP_PRESTIGE_COST * 10;
+      gate.desc.textContent = unit + ' 声望 = 1 蓝图（每换 10 张再涨 15%）';
+      gate.sub.textContent = '已换 ' + (state.bpBought || 0) + ' 张 ｜ ' +
+        '下一档 ' + bpPriceAt((state.bpBought || 0) + 10) + ' 声望/张 ｜ ' +
+        '现有 ' + fmt(state.prestige) + ' 声望';
+      gate.b1.disabled = state.prestige < bpBatchCost(1);
+      gate.b10.disabled = state.prestige < bpBatchCost(10);
     } else {
       gate.name.textContent = '科技锁定';
       gate.flag.textContent = '未解锁';
@@ -1280,7 +1292,8 @@
     var capH = offlineCapHours();
     if (!(capH > 0)) { return; }
     var capped = Math.min(seconds, capH * 3600);
-    var gain = getAutoRate() * capped * offlineEfficiency();
+    // v0.11.0：离线只结算基础自动产出（不含声望乘区），否则「离线 × 声望」会双爆
+    var gain = getAutoRate(false) * capped * offlineEfficiency();
     if (gain <= 0) { return; }
     addBounty(gain);
     if (capped >= 60) { showOffline(seconds, capped, gain); }
@@ -1335,13 +1348,10 @@
     for (var i = 0; i < WEAPONS.length; i++) {
       merged.weapons[WEAPONS[i].id] = Math.max(0, Number(srcW[WEAPONS[i].id]) || 0);
     }
-    var srcG = data.gear || {};
-    for (var j = 0; j < GEAR.length; j++) {
-      var lv = Math.max(0, Number(srcG[GEAR[j].id]) || 0);
-      merged.gear[GEAR[j].id] = GEAR[j].max === Infinity ? lv : Math.min(lv, GEAR[j].max);
-    }
+    // v0.11.0：战术装备整块移除（旧档里的 gear 字段直接忽略，武器数量自动驱动里程碑）
     // v0.6.0 新增：蓝图 / 已研究节点 / 游玩时长
     merged.blueprints = Math.max(0, Number(data.blueprints) || 0);
+    merged.bpBought = Math.max(0, Number(data.bpBought) || 0);
     merged.playTime = Math.max(0, Number(data.playTime) || 0);
     var srcT = data.tech || {};
     for (var t = 0; t < TECH_NODES.length; t++) {
@@ -1464,7 +1474,6 @@
     ui.hordeFill = $('horde-fill');
     ui.hordeText = $('horde-text');
     ui.weapons = $('weapons');
-    ui.gear = $('gear');
     ui.bulk1 = $('bulk-1');
     ui.bulk10 = $('bulk-10');
     ui.armyList = $('army-list');
@@ -1556,7 +1565,6 @@
   function boot() {
     cacheDom();
     buildWeapons();
-    buildGear();
     buildArmy();
     buildTech();
     buildOffline();

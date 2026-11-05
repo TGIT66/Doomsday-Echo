@@ -335,6 +335,11 @@ h1{
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .card-rate{ font-size:12px; color:var(--rust); font-variant-numeric:tabular-nums; }
+.card-ms{
+  font-size:11px; color:var(--muted); margin-top:2px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.card-ms.done{ color:var(--green); }
 
 .card.locked{ opacity:.62; }
 .card.prestige{ border-color:rgba(211,63,73,.42); }
