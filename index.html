@@ -21,7 +21,7 @@
 
   <header class="top">
     <div class="title-row">
-      <h1>末日残响</h1>
+      <h1 id="game-title">末日残响</h1>
       <button id="btn-save" class="icon-btn" aria-label="打开存档面板">💾</button>
     </div>
     <div class="realm-row" id="realm-row" title="点击查看生存等级">
@@ -36,13 +36,29 @@
     <div class="energy-label">赏金</div>
     <div class="energy" id="bounty">0</div>
     <div class="energy-rate" id="rate">+0 / 秒</div>
+    <!-- v0.12.0：击杀演出舞台（纯内联 SVG，无外部素材） -->
+    <div class="zombie-stage" id="zombie-stage" aria-hidden="true">
+      <svg class="zombie" id="zombie" viewBox="0 0 120 130" xmlns="http://www.w3.org/2000/svg">
+        <g class="zombie-parts">
+          <rect class="zombie-leg" x="47" y="86" width="10" height="26" rx="5"/>
+          <rect class="zombie-leg" x="63" y="86" width="10" height="26" rx="5"/>
+          <path class="zombie-torso" d="M44 52 h32 l7 38 h-46 z"/>
+          <rect class="zombie-arm" x="16" y="58" width="28" height="10" rx="5"/>
+          <rect class="zombie-arm" x="76" y="58" width="28" height="10" rx="5"/>
+          <circle class="zombie-head" cx="60" cy="32" r="18"/>
+          <circle class="zombie-eye" cx="53" cy="29" r="2.6"/>
+          <circle class="zombie-eye" cx="67" cy="29" r="2.6"/>
+        </g>
+      </svg>
+      <div class="zombie-hp"><i id="zombie-hp-fill"></i></div>
+    </div>
     <button id="fire" class="fire" aria-label="开火">
       <span class="fire-title">开 火</span>
       <span class="fire-sub">每发 +<b id="click-power">1</b></span>
     </button>
-    <div class="horde-bar" id="horde-bar">
+    <div class="horde-bar" id="horde-bar" role="button" tabindex="0" aria-label="释放尸潮">
       <div class="horde-fill" id="horde-fill"></div>
-      <span class="horde-text" id="horde-text">尸潮 0 / 100 发</span>
+      <span class="horde-text" id="horde-text">尸潮就绪 · 点击释放</span>
     </div>
     <div class="hero-note" id="fire-note">点击开火，击杀丧尸</div>
   </section>
@@ -69,7 +85,7 @@
     <section class="tab-panel" id="panel-tech">
       <h2>科技</h2>
       <div id="tech-list" class="list"></div>
-      <p class="panel-hint">科技是后期内容：累计声望满 300 才开放。蓝图来自开火时的极低概率掉落、尸潮期间的加成，以及用声望兑换（25 声望起，每换 10 张涨价 15%）。</p>
+      <p class="panel-hint">科技是后期内容：累计声望满 300 才开放，共 4 条分支 21 个节点。蓝图来自开火时的极低概率掉落、尸潮期间的加成，以及用声望兑换（25 声望起，每换 10 张涨价 15%）。</p>
     </section>
 
     <section class="tab-panel" id="panel-log">
@@ -165,6 +181,19 @@
 </div>
 
 <div id="toast" class="toast hidden"></div>
+
+<!-- GM 调试面板（连点标题 7 次开启，开发者彩蛋） -->
+<div class="modal hidden" id="gm-modal">
+  <div class="modal-box">
+    <h3>GM 调试</h3>
+    <p class="hint">仅本地生效，改完自动存档。</p>
+    <div id="gm-body" class="gm-body"></div>
+    <div class="modal-actions">
+      <button class="primary" id="gm-close">关闭</button>
+      <button class="danger" id="gm-exit">退出 GM 模式</button>
+    </div>
+  </div>
+</div>
 
 <script src="game.js"></script>
 </body>

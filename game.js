@@ -14,7 +14,7 @@
    *  配置区
    * ================================================================== */
 
-  var VERSION = 'v0.11.0';
+  var VERSION = 'v0.12.0';
   var SAVE_KEY = 'dse_save_v2';   // 键名不变：旧档缺新字段时按 0 补齐，不丢进度
   var AUTOSAVE_MS = 10000;        // 自动存档间隔
   var RENDER_MS = 100;            // 界面刷新节流（毫秒）
@@ -22,14 +22,13 @@
   var ELITE_EVERY = 40;           // 每 N 次开火来一只精英（v0.6.2 从 25 提到 40）
   var ELITE_MULT = 2;             // 非尸潮时的精英赏金倍率（v0.9.0 从 5 降到 2）
 
-  // 尸潮：开火满 HORDE_CLICKS 发就触发，持续 HORDE_SECONDS 秒，结束后还要冷却 HORDE_COOLDOWN 秒。
+  // 尸潮：v0.12.0 起改成「手动释放」—— 冷却走完后按钮亮起，玩家点击才触发。
+  //   持续 HORDE_SECONDS 秒，结束后进入 HORDE_COOLDOWN 秒冷却。
   //   持续期间：点击赏金 ×2、精英赏金 ×5、开火掉落蓝图的概率 ×3。
-  //   触发的那一发本身不算在尸潮内；尸潮进行中的开火不累计次数。
-  //   冷却期间的开火**不算有效次数**，冷却走完才从 0 重新开始累计。
-  //   v0.9.0 之前是「每 300 秒游玩时间白送一张蓝图」，现在改成限时增益窗口。
+  //   HORDE_CLICKS 只保留给旧存档字段做钳制，不再参与触发判定。
   var HORDE_CLICKS = 100;
   var HORDE_SECONDS = 120;
-  var HORDE_COOLDOWN = 300;       // 尸潮结束后的冷却（秒），冷却期间开火不计数
+  var HORDE_COOLDOWN = 300;       // 尸潮结束后的冷却（秒）
   var HORDE_CLICK_MULT = 2;
   var HORDE_ELITE_MULT = 5;
   var HORDE_BP_MULT = 3;
@@ -119,38 +118,72 @@
     { name:'人类火种', at:1e20 }
   ];
 
-  // 科技三分支：每个分支 6 个节点，必须按顺序研究
+  // 科技四分支，必须按顺序研究
+  // v0.12.0：火力/后勤/生物各砍到 5 个节点，新增「智能」分支（折扣 + 长按）
   var TECH_BRANCHES = [
-    { id:'fire', name:'火力', icon:'🔥', desc:'单发伤害与暴击' },
-    { id:'logi', name:'后勤', icon:'📦', desc:'自动赏金与离线效率' },
-    { id:'bio',  name:'生物', icon:'🧬', desc:'精英、暴击与全产出' }
+    { id:'fire',  name:'火力', icon:'🔥', desc:'单发伤害与暴击' },
+    { id:'logi',  name:'后勤', icon:'📦', desc:'自动赏金与离线效率' },
+    { id:'bio',   name:'生物', icon:'🧬', desc:'精英、蓝图与全产出' },
+    { id:'intel', name:'智能', icon:'🤖', desc:'武器折扣与长按连发' }
   ];
 
   // kind: click / auto / all / off(离线效率加法) / crit(暴击率加法) /
-  //       eliteReduce(精英间隔减少) / eliteMult(精英赏金乘算)
+  //       eliteReduce(精英间隔减少) / eliteMult(精英赏金乘算) / dropRate(掉落率加法) /
+  //       weaponDiscount(武器价格折扣) / hold(解锁长按) / holdCps(长按频率加法)
+  //
   // v0.11.0：全节点成本 ×3（总蓝图 1296 → 3888），把科技轴从 3 小时拉长到 19 小时
+  // v0.12.0：三分支砍到 5 个节点（15/39/85/186/421，各 746）；
+  //          新增「智能」6 节点（40/72/130/234/420/756，共 1652）；总计 21 节点 / 3890 蓝图
   var TECH_NODES = [
-    { id:'f1', branch:'fire', name:'膛线优化',   cost:12,  kind:'click',       mult:1.15, desc:'单发伤害 ×1.15' },
-    { id:'f2', branch:'fire', name:'高爆弹头',   cost:30,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
-    { id:'f3', branch:'fire', name:'弹道计算',   cost:66,  kind:'click',       mult:1.20, desc:'单发伤害 ×1.20' },
-    { id:'f4', branch:'fire', name:'暴击训练',   cost:144, kind:'crit',        value:0.15, desc:'15% 概率暴击（伤害 ×3）' },
-    { id:'f5', branch:'fire', name:'重武器许可', cost:324, kind:'click',       mult:1.25, desc:'单发伤害 ×1.25' },
-    { id:'f6', branch:'fire', name:'天基火控',   cost:720, kind:'click',       mult:1.50, desc:'单发伤害 ×1.50' },
+    // ---- 火力（5）----
+    { id:'f1', branch:'fire',  name:'膛线优化',   cost:15,  kind:'click', mult:1.15, desc:'单发伤害 ×1.15' },
+    { id:'f2', branch:'fire',  name:'高爆弹头',   cost:39,  kind:'click', mult:1.20, desc:'单发伤害 ×1.20' },
+    { id:'f3', branch:'fire',  name:'暴击训练',   cost:85,  kind:'crit',  value:0.15, desc:'15% 概率暴击（伤害 ×3）' },
+    { id:'f4', branch:'fire',  name:'重武器许可', cost:186, kind:'click', mult:1.25, desc:'单发伤害 ×1.25' },
+    { id:'f5', branch:'fire',  name:'天基火控',   cost:421, kind:'click', mult:1.50, desc:'单发伤害 ×1.50' },
 
-    { id:'l1', branch:'logi', name:'补给线',     cost:12,  kind:'auto',        mult:1.15, desc:'自动赏金 ×1.15' },
-    { id:'l2', branch:'logi', name:'弹药工厂',   cost:30,  kind:'auto',        mult:1.20, desc:'自动赏金 ×1.20' },
-    { id:'l3', branch:'logi', name:'野战医院',   cost:66,  kind:'off',         value:0.10, desc:'离线效率 +10%' },
-    { id:'l4', branch:'logi', name:'铁路网',     cost:144, kind:'auto',        mult:1.25, desc:'自动赏金 ×1.25' },
-    { id:'l5', branch:'logi', name:'战时经济',   cost:324, kind:'auto',        mult:1.30, desc:'自动赏金 ×1.30' },
-    { id:'l6', branch:'logi', name:'军工复合体', cost:720, kind:'auto',        mult:1.50, desc:'自动赏金 ×1.50' },
+    // ---- 后勤（5）----
+    { id:'l1', branch:'logi',  name:'补给线',     cost:15,  kind:'auto', mult:1.15, desc:'自动赏金 ×1.15' },
+    { id:'l2', branch:'logi',  name:'野战医院',   cost:39,  kind:'off',  value:0.10, desc:'离线效率 +10%' },
+    { id:'l3', branch:'logi',  name:'铁路网',     cost:85,  kind:'auto', mult:1.25, desc:'自动赏金 ×1.25' },
+    { id:'l4', branch:'logi',  name:'战时经济',   cost:186, kind:'auto', mult:1.30, desc:'自动赏金 ×1.30' },
+    { id:'l5', branch:'logi',  name:'军工复合体', cost:421, kind:'auto', mult:1.50, desc:'自动赏金 ×1.50' },
 
-    { id:'b1', branch:'bio',  name:'尸群研究',   cost:12,  kind:'eliteReduce', value:10,   desc:'精英间隔 −10 发' },
-    { id:'b2', branch:'bio',  name:'遗体解剖',   cost:30,  kind:'dropRate',    value:0.002, desc:'开火掉落蓝图的概率 +0.2%' },
-    { id:'b3', branch:'bio',  name:'诱饵战术',   cost:66,  kind:'eliteMult',   mult:2.00, desc:'精英赏金 ×2' },
-    { id:'b4', branch:'bio',  name:'战场急救',   cost:144, kind:'off',         value:0.10, desc:'离线效率 +10%' },
-    { id:'b5', branch:'bio',  name:'神经加速',   cost:324, kind:'click',       mult:1.30, desc:'单发伤害 ×1.30' },
-    { id:'b6', branch:'bio',  name:'人类适应',   cost:720, kind:'all',         mult:1.50, desc:'单发与自动 ×1.50' }
+    // ---- 生物（5）----
+    { id:'b1', branch:'bio',   name:'尸群研究',   cost:15,  kind:'eliteReduce', value:10,    desc:'精英间隔 −10 发' },
+    { id:'b2', branch:'bio',   name:'遗体解剖',   cost:39,  kind:'dropRate',    value:0.002, desc:'开火掉落蓝图的概率 +0.2%' },
+    { id:'b3', branch:'bio',   name:'诱饵战术',   cost:85,  kind:'eliteMult',   mult:2.00,   desc:'精英赏金 ×2' },
+    { id:'b4', branch:'bio',   name:'战场急救',   cost:186, kind:'off',         value:0.10,  desc:'离线效率 +10%' },
+    { id:'b5', branch:'bio',   name:'人类适应',   cost:421, kind:'all',         mult:1.50,   desc:'单发与自动 ×1.50' },
+
+    // ---- 智能（6）：折扣 ×3 + 长按 ×3 ----
+    // 每把武器只吃「自己档位」+「全档」两档折扣：0.75 × 0.80 = 0.60 → 正好 −40%（封顶）
+    { id:'i1', branch:'intel', name:'轻武器配额', cost:40,  kind:'weaponDiscount', tier:'low',  value:0.25, desc:'手枪 / 冲锋枪 / 霰弹枪 / 突击步枪 价格 −25%' },
+    { id:'i2', branch:'intel', name:'速射训练',   cost:72,  kind:'hold',   value:0, desc:'解锁长按连发（基础 5 发/秒）' },
+    { id:'i3', branch:'intel', name:'重武器配额', cost:130, kind:'weaponDiscount', tier:'high', value:0.25, desc:'狙击步枪及以上 价格 −25%' },
+    { id:'i4', branch:'intel', name:'极限采购',   cost:234, kind:'weaponDiscount', tier:'all',  value:0.20, desc:'全部武器 价格 −20%' },
+    { id:'i5', branch:'intel', name:'机械扳机',   cost:420, kind:'holdCps', value:2, desc:'长按频率 +2 发/秒' },
+    { id:'i6', branch:'intel', name:'全自动枪机', cost:756, kind:'holdCps', value:3, desc:'长按频率 +3 发/秒' }
   ];
+
+  // v0.12.0：武器采购折扣。总折扣封顶 40%，即最便宜降到原价 6 折。
+  //   前 4 档（手枪/冲锋枪/霰弹枪/突击步枪）算「低档」，其余 5 档算「高档」。
+  var WEAPON_DISCOUNT_CAP = 0.40;
+  var LOW_TIER_MAX = 3;   // WEAPONS 下标 0~3
+
+  // v0.12.0：科技树重排了 id，旧档（v < 4）需要按旧 id 映射到新 id。
+  //   被砍掉的三个节点（旧 f3 弹道计算 / 旧 l2 弹药工厂 / 旧 b5 神经加速）直接丢弃。
+  var LEGACY_TECH_MAP = {
+    f1:'f1', f2:'f2', f4:'f3', f5:'f4', f6:'f5',
+    l1:'l1', l3:'l2', l4:'l3', l5:'l4', l6:'l5',
+    b1:'b1', b2:'b2', b3:'b3', b4:'b4', b6:'b5'
+  };
+
+  // v0.12.0：长按连发。点亮「速射训练」后按住开火键持续开火。
+  //   基础 5 发/秒，两级共 +5，上限 10 发/秒（正好点满，没有溢出）。
+  var HOLD_DELAY_MS = 280;
+  var HOLD_BASE_CPS = 5;
+  var HOLD_MAX_CPS = 10;
   /* 尸潮时长 HORDE_SECONDS 定义在顶部配置区（v0.9.0 起是 120 秒的限时增益窗口） */
 
   var UNITS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx', 'Sp', 'Oc', 'No', 'Dc'];
@@ -202,7 +235,7 @@
     for (var j = 0; j < SOLDIERS.length; j++) { soldiers[SOLDIERS[j].id] = 0; }
     var now = Date.now();
     return {
-      v: 3,
+      v: 4,
       bounty: 0,        // 当前赏金
       total: 0,         // 累计获得（决定生存等级，跨重整不清零）
       manual: 0,        // 累计点射赏金
@@ -362,6 +395,19 @@
   function techOffBonus() { return techSum('off'); }
   function techCritChance() { return Math.min(1, techSum('crit')); }
 
+  // v0.12.0：长按连发。点亮「速射训练」后开放，频率 = 5 + 各级加成，封顶 10 发/秒。
+  function techHoldUnlocked() {
+    for (var i = 0; i < TECH_NODES.length; i++) {
+      if (TECH_NODES[i].kind === 'hold' && techHas(TECH_NODES[i].id)) { return true; }
+    }
+    return false;
+  }
+
+  function techHoldCps() {
+    if (!techHoldUnlocked()) { return 0; }
+    return Math.min(HOLD_MAX_CPS, HOLD_BASE_CPS + techSum('holdCps'));
+  }
+
   // 精英间隔（生物分支的「尸群研究」会缩短）
   function eliteEvery() {
     return Math.max(10, ELITE_EVERY - techSum('eliteReduce'));
@@ -389,12 +435,29 @@
     return Math.min(1, techDropRate() * hordeDropMult());
   }
 
+  // v0.12.0：尸潮改成手动释放。冷却走完按钮才亮，玩家主动点才触发；
+  // 不点就一直挂着，也不再按开火发数自动触发（旧档的 hordeProgress 忽略）。
+  function hordeReady() {
+    return !hordeActive() && (state.hordeCooldown || 0) <= 0;
+  }
+
   function startHorde() {
+    if (!hordeReady()) { return; }
     state.hordeProgress = 0;
     state.hordeLeft = HORDE_SECONDS;
     state.hordeCooldown = 0;
     toast('尸潮来袭！' + HORDE_SECONDS + ' 秒内  点击 ×' + HORDE_CLICK_MULT +
       ' ｜ 精英 ×' + HORDE_ELITE_MULT + ' ｜ 蓝图 ×' + HORDE_BP_MULT);
+    render();
+  }
+
+  function releaseHorde() {
+    if (hordeActive()) { toast('尸潮正在进行中'); return; }
+    if (!hordeReady()) {
+      toast('尸潮冷却中，还需 ' + Math.ceil(state.hordeCooldown || 0) + ' 秒');
+      return;
+    }
+    startHorde();
   }
 
   function endHorde() {
@@ -441,8 +504,28 @@
     return d * milestoneClickMult() * armyClickMult() * techClickMult() * prestigeMult();
   }
 
+  // v0.12.0：武器档位（前 4 档低档，其余高档）与折扣系数
+  function weaponTier(w) {
+    return WEAPONS.indexOf(w) <= LOW_TIER_MAX ? 'low' : 'high';
+  }
+
+  // 已点亮折扣节点 → 返回 1 - 总折扣（乘法叠加，封顶 40%）
+  function weaponPriceMult(w) {
+    var tier = weaponTier(w);
+    var cut = 0;
+    for (var i = 0; i < TECH_NODES.length; i++) {
+      var n = TECH_NODES[i];
+      if (n.kind !== 'weaponDiscount' || !techHas(n.id)) { continue; }
+      if (n.tier !== 'all' && n.tier !== tier) { continue; }
+      cut = 1 - (1 - cut) * (1 - n.value);
+    }
+    if (cut > WEAPON_DISCOUNT_CAP) { cut = WEAPON_DISCOUNT_CAP; }
+    return 1 - cut;
+  }
+
   function weaponCost(w) {
-    return Math.ceil(w.baseCost * Math.pow(w.costMult, state.weapons[w.id] || 0));
+    // -1e-9 抹掉浮点误差（0.75 × 0.8 会算出 0.6000000000000001，ceil 会多收 1）
+    return Math.ceil(w.baseCost * Math.pow(w.costMult, state.weapons[w.id] || 0) * weaponPriceMult(w) - 1e-9);
   }
 
   function offlineTier() {
@@ -508,7 +591,8 @@
    *  玩家操作
    * ================================================================== */
 
-  function fire() {
+  // silent = true 表示长按连发调用：不弹浮字、不震动、不立刻重绘（交给主循环统一刷新）
+  function fire(silent) {
     var gain = getClickDamage();
     state.clicks++;
 
@@ -529,29 +613,84 @@
       gain *= eliteMult();
     }
     addBounty(gain, 'click');
-    floatText('+' + fmt(gain) + (crit ? '!' : ''));
 
-    if (elite) {
-      toast('精英丧尸！赏金 ×' + fmt(eliteMult()));
-      ui.fire.classList.add('elite');
-      setTimeout(function () { ui.fire.classList.remove('elite'); }, 320);
-    }
+    // v0.12.0：击杀演出（playHit 自己处理连发降级）
+    playHit(gain, crit, elite);
 
     // 开火有极低概率捡到蓝图（科技没解锁也照样累积，解锁后一次性可用）
-    if (Math.random() < effectiveDropRate()) {
-      state.blueprints = (state.blueprints || 0) + 1;
-      floatText('+1 蓝图');
-    }
-    if (navigator && navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
+    var gotBp = Math.random() < effectiveDropRate();
+    if (gotBp) { state.blueprints = (state.blueprints || 0) + 1; }
 
-    // 尸潮计数：只有「不在尸潮中、也不在冷却中」的开火才算有效次数
-    //   · 尸潮进行中：不累计
-    //   · 冷却中：不累计（冷却走完才从 0 重新开始数）
-    if (!inHorde && !hordeCooling()) {
-      state.hordeProgress = Math.min(HORDE_CLICKS, (state.hordeProgress || 0) + 1);
-      if (state.hordeProgress >= HORDE_CLICKS) { startHorde(); }
+    if (!silent) {
+      floatText('+' + fmt(gain) + (crit ? '!' : ''));
+      if (elite) {
+        toast('精英丧尸！赏金 ×' + fmt(eliteMult()));
+        ui.fire.classList.add('elite');
+        setTimeout(function () { ui.fire.classList.remove('elite'); }, 320);
+      }
+      if (gotBp) { floatText('+1 蓝图'); }
+      if (navigator && navigator.vibrate) { try { navigator.vibrate(8); } catch (e) {} }
+      render();
     }
-    render();
+  }
+
+  /* ---------- v0.12.0：长按连发 ---------- */
+
+  var holdTimer = null;
+  var holding = false;      // 手指/鼠标是否还按着
+  var holdAcc = 0;          // 连发时间累加器
+  var holdActive = false;   // 已经进入连发状态（超过 HOLD_DELAY_MS）
+  var holdFired = false;    // 本次长按是否已经打出过连发（用来吞掉收尾 click）
+  var suppressClickUntil = 0; // 吞 click 的时间窗，防止浏览器不派发 click 时误吞下一次单击
+
+  function canHold() { return techHoldCps() > 0; }
+
+  function beginHold() {
+    if (!canHold() || holding) { return; }
+    holding = true;
+    holdActive = false;
+    holdFired = false;
+    holdAcc = 0;
+    if (holdTimer) { clearTimeout(holdTimer); }
+    holdTimer = setTimeout(function () {
+      holdTimer = null;
+      if (!holding) { return; }
+      holdActive = true;
+      holdFired = true;
+      if (ui.fire) { ui.fire.classList.add('holding'); }
+      if (navigator && navigator.vibrate) { try { navigator.vibrate(10); } catch (e) {} }
+    }, HOLD_DELAY_MS);
+  }
+
+  function endHold() {
+    holding = false;
+    holdActive = false;
+    holdAcc = 0;
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    if (holdFired) { suppressClickUntil = Date.now() + 400; }
+    if (ui.fire) { ui.fire.classList.remove('holding'); }
+  }
+
+  // 由主循环按 dt 驱动，切后台自然停
+  function holdTick(dt) {
+    if (!holding || !holdActive || !canHold()) { return; }
+    holdAcc += dt * techHoldCps();
+    var guard = 0;
+    while (holdAcc >= 1 && guard < 40) {
+      holdAcc -= 1;
+      fire(true);
+      guard++;
+    }
+  }
+
+  // 点击（短按）开火；长按松手后浏览器还会补一次 click，这里吞掉
+  function fireByClick() {
+    if (holdFired && Date.now() < suppressClickUntil) {
+      holdFired = false;
+      return;
+    }
+    holdFired = false;
+    fire();
   }
 
   // 批量购买：一次买几把（1 或 10），只在军火库生效
@@ -559,13 +698,13 @@
     return state.buyAmount === 10 ? 10 : 1;
   }
 
-  // n 把的总价 = 等比数列求和：baseCost × r^owned × (r^n − 1) / (r − 1)
+  // n 把的总价 = 等比数列求和：baseCost × r^owned × (r^n − 1) / (r − 1)，再乘折扣
   function weaponBulkCost(w, n) {
-    if (n <= 1) { return weaponCost(w); }
     var owned = state.weapons[w.id] || 0;
     var r = w.costMult;
     var first = w.baseCost * Math.pow(r, owned);
-    return Math.ceil(first * (Math.pow(r, n) - 1) / (r - 1));
+    var sum = n <= 1 ? first : first * (Math.pow(r, n) - 1) / (r - 1);
+    return Math.ceil(sum * weaponPriceMult(w) - 1e-9);
   }
 
   function buyWeapon(w) {
@@ -905,7 +1044,7 @@
       hmain.appendChild(el('div', 'tech-branch-name', br.name));
       hmain.appendChild(el('div', 'tech-branch-desc', br.desc));
       head.appendChild(hmain);
-      var prog = el('span', 'tech-branch-prog', '0/6');
+      var prog = el('span', 'tech-branch-prog', '0/' + techBranchNodes(br.id).length);
       head.appendChild(prog);
       box.appendChild(head);
       ui.techProg[br.id] = prog;
@@ -1026,33 +1165,36 @@
       ui.rankNext.textContent = '已达当前版本最高等级';
     }
 
-    // 尸潮：进度条平时累积「距下一次还差几发」，触发后变成倒计时（红色脉冲），
-    //       冷却中显示为灰色等待态（从空填到满 = 还要等多久，这段时间的开火不计数）
+    // 尸潮（v0.12.0 手动触发）：就绪时高亮「点击释放」，进行中倒计时，冷却中灰色等待
     var inHorde = hordeActive();
     var cooling = hordeCooling();
-    var hordeProg = Math.max(0, Math.min(HORDE_CLICKS, state.hordeProgress || 0));
+    var hordeIsReady = hordeReady();
     var hordeLeftSec = Math.max(0, Math.ceil(state.hordeLeft || 0));
     var coolLeftSec = Math.max(0, Math.ceil(state.hordeCooldown || 0));
     ui.hordeBar.classList.toggle('active', inHorde);
     ui.hordeBar.classList.toggle('cooling', cooling);
+    ui.hordeBar.classList.toggle('ready', hordeIsReady);
     ui.fire.classList.toggle('horde', inHorde);
     ui.hordeFill.style.width = (inHorde
       ? Math.max(0, Math.min(100, (state.hordeLeft || 0) / HORDE_SECONDS * 100))
       : (cooling
         ? Math.max(0, Math.min(100, (1 - (state.hordeCooldown || 0) / HORDE_COOLDOWN) * 100))
-        : hordeProg / HORDE_CLICKS * 100)).toFixed(1) + '%';
+        : 100)).toFixed(1) + '%';
     if (inHorde) {
       ui.hordeText.textContent = '尸潮进行中 ｜ 点击 ×' + HORDE_CLICK_MULT + ' ｜ 剩余 ' + hordeLeftSec + ' 秒';
     } else if (cooling) {
       ui.hordeText.textContent = '尸潮冷却 ' + Math.floor(coolLeftSec / 60) + ':' +
-        ('0' + (coolLeftSec % 60)).slice(-2) + ' ｜ 结束后重新计数';
+        ('0' + (coolLeftSec % 60)).slice(-2);
     } else {
-      ui.hordeText.textContent = '尸潮 ' + hordeProg + ' / ' + HORDE_CLICKS + ' 发';
+      ui.hordeText.textContent = '尸潮就绪 · 点击释放';
     }
 
     // 精英进度（间隔会被「尸群研究」缩短，所以这里也走 eliteEvery()）
     var eliteGap = eliteEvery();
     var left = Math.max(1, eliteGap - (state.eliteProgress || 0));
+    if (ui.zombieHp) {
+      ui.zombieHp.style.width = Math.min(100, (state.eliteProgress || 0) / eliteGap * 100).toFixed(0) + '%';
+    }
     ui.fireNote.textContent = inHorde
       ? '尸潮中：精英 ×' + fmt(eliteMult()) + ' ｜ 蓝图掉率 ×' + HORDE_BP_MULT
       : '下一只精英：还需 ' + left + ' 发（每 ' + eliteGap +
@@ -1155,7 +1297,7 @@
     ui.techBp.textContent = fmt(state.blueprints || 0);
     ui.techTimer.textContent = (inHorde
       ? '尸潮中 ' + hordeLeftSec + ' 秒'
-      : (cooling ? '冷却 ' + coolLeftSec + ' 秒' : '尸潮 ' + Math.max(0, HORDE_CLICKS - hordeProg) + ' 发')) +
+      : (cooling ? '尸潮冷却 ' + coolLeftSec + ' 秒' : '尸潮就绪')) +
       ' ｜ 掉率 ' + (effectiveDropRate() * 100).toFixed(1) + '%';
 
     var tUnlocked = techUnlocked();
@@ -1198,7 +1340,7 @@
       for (var tk = 0; tk < TECH_NODES.length; tk++) {
         if (TECH_NODES[tk].branch === br0.id && techHas(TECH_NODES[tk].id)) { ownedCount++; }
       }
-      ui.techProg[br0.id].textContent = ownedCount + '/6';
+      ui.techProg[br0.id].textContent = ownedCount + '/' + techBranchNodes(br0.id).length;
     }
 
     // 战报
@@ -1214,6 +1356,42 @@
       ' ｜ 离线 ' + (offlineUnlocked() ? capH + ' 小时 / ' + effPct + '%' : '未解锁') +
       ' ｜ 声望 ' + fmt(state.prestige) +
       ' ｜ 击杀 ' + state.clicks;
+  }
+
+  /* ---------- v0.12.0：击杀演出 ---------- */
+
+  var hitSeq = 0;
+  var eliteDecayTimer = null;
+
+  // 只用 transform / opacity（走 GPU 合成）；连发超过 8 发/秒时自动降级成隔发表现
+  function playHit(gain, crit, elite) {
+    var stage = ui.zombieStage;
+    var z = ui.zombie;
+    if (!stage || !z) { return; }
+    hitSeq++;
+    var fast = holding && holdActive && techHoldCps() > 8;
+    if (fast && hitSeq % 2 === 1) { return; }
+
+    z.classList.remove('hit', 'crit-hit');
+    void z.offsetWidth;                  // 强制重排，让同一个 animation 能重新播放
+    z.classList.add(crit ? 'crit-hit' : 'hit');
+
+    if (crit) {
+      stage.classList.add('crit');
+      setTimeout(function () { stage.classList.remove('crit'); }, 260);
+    }
+    if (elite) {
+      stage.classList.add('elite');
+      if (eliteDecayTimer) { clearTimeout(eliteDecayTimer); }
+      eliteDecayTimer = setTimeout(function () { stage.classList.remove('elite'); }, 700);
+    }
+    if (!fast) {
+      var b = el('span', 'blood');
+      b.style.setProperty('--bx', (Math.random() * 70 - 35).toFixed(0) + 'px');
+      b.style.setProperty('--by', (-30 - Math.random() * 46).toFixed(0) + 'px');
+      stage.appendChild(b);
+      setTimeout(function () { if (b.parentNode) { b.parentNode.removeChild(b); } }, 540);
+    }
   }
 
   function floatText(text) {
@@ -1244,6 +1422,158 @@
   }
 
   /* ==================================================================
+   *  v0.12.0：GM 调试面板（开发者彩蛋 —— 连点标题 7 次）
+   * ================================================================== */
+
+  var GM_KEY = 'dse_gm';
+  var gmOn = false;
+  var gmTitleClicks = 0;
+  var gmTitleTimer = null;
+
+  function gmPersist(on) {
+    try { localStorage.setItem(GM_KEY, on ? '1' : '0'); } catch (e) {}
+  }
+
+  function gmStored() {
+    try { return localStorage.getItem(GM_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function gmExpose(on) {
+    if (on) {
+      Object.defineProperty(window, '__DSE__', {
+        configurable: true,
+        get: function () {
+          return { state: state, render: render, save: saveGame, tech: TECH_NODES };
+        }
+      });
+    } else {
+      try { delete window.__DSE__; } catch (e) { window.__DSE__ = null; }
+    }
+  }
+
+  function gmChanged() { render(); saveGame(); }
+
+  function gmSetOn(on) {
+    gmOn = on;
+    gmPersist(on);
+    gmExpose(on);
+    if (ui.gmBtn) { ui.gmBtn.style.display = on ? '' : 'none'; }
+    if (!on && ui.gmModal) { ui.gmModal.classList.add('hidden'); }
+    toast(on ? 'GM 模式已开启' : 'GM 模式已关闭');
+  }
+
+  function gmAddButton(label, fn) {
+    var b = el('button', '', label);
+    b.type = 'button';
+    b.addEventListener('click', function () { fn(); gmChanged(); });
+    return b;
+  }
+
+  function buildGm() {
+    var box = ui.gmBody;
+    if (!box) { return; }
+    box.innerHTML = '';
+
+    box.appendChild(el('div', 'gm-group', '资源'));
+    box.appendChild(gmAddButton('赏金 +1K', function () { state.bounty += 1e3; }));
+    box.appendChild(gmAddButton('赏金 +1M', function () { state.bounty += 1e6; }));
+    box.appendChild(gmAddButton('赏金 +1B', function () { state.bounty += 1e9; }));
+    box.appendChild(gmAddButton('累计 +1M', function () { state.total += 1e6; }));
+    box.appendChild(gmAddButton('累计 +1B', function () { state.total += 1e9; }));
+    box.appendChild(gmAddButton('累计 +1T', function () { state.total += 1e12; }));
+    box.appendChild(gmAddButton('本局产出清零', function () { state.runBase = state.total; }));
+
+    box.appendChild(el('div', 'gm-group', '声望'));
+    box.appendChild(gmAddButton('声望 +10', function () { state.prestige += 10; }));
+    box.appendChild(gmAddButton('声望 +100', function () { state.prestige += 100; }));
+    box.appendChild(gmAddButton('累计声望 +300', function () {
+      state.prestigeTotal = (state.prestigeTotal || 0) + 300;
+    }));
+    box.appendChild(gmAddButton('重整次数 +1', function () {
+      state.prestigeCount = (state.prestigeCount || 0) + 1;
+    }));
+
+    box.appendChild(el('div', 'gm-group', '科技'));
+    box.appendChild(gmAddButton('蓝图 +10', function () {
+      state.blueprints = (state.blueprints || 0) + 10;
+    }));
+    box.appendChild(gmAddButton('蓝图 +100', function () {
+      state.blueprints = (state.blueprints || 0) + 100;
+    }));
+    box.appendChild(gmAddButton('一键全解', function () {
+      for (var i = 0; i < TECH_NODES.length; i++) { state.tech[TECH_NODES[i].id] = 1; }
+      toast('已研究全部 ' + TECH_NODES.length + ' 个节点');
+    }));
+    box.appendChild(gmAddButton('清空科技', function () { state.tech = {}; }));
+    box.appendChild(gmAddButton('兑换价重置', function () { state.bpBought = 0; }));
+
+    box.appendChild(el('div', 'gm-group', '时间'));
+    box.appendChild(gmAddButton('游玩 +1 小时', function () {
+      state.playTime = (state.playTime || 0) + 3600;
+    }));
+    box.appendChild(gmAddButton('模拟离线 8h', function () {
+      if (!offlineUnlocked()) { toast('还没解锁离线：先完成一次撤退重整'); return; }
+      state.lastSeen = Date.now() - 8 * 3600 * 1000;
+      applyOffline();
+      state.lastSeen = Date.now();
+    }));
+  }
+
+  function openGm() {
+    if (!gmOn) { gmSetOn(true); }
+    buildGm();
+    if (ui.gmModal) { ui.gmModal.classList.remove('hidden'); }
+  }
+
+  function closeGm() {
+    if (ui.gmModal) { ui.gmModal.classList.add('hidden'); }
+  }
+
+  function gmTitleClick() {
+    if (gmOn) { openGm(); return; }
+    gmTitleClicks++;
+    if (gmTitleTimer) { clearTimeout(gmTitleTimer); }
+    gmTitleTimer = setTimeout(function () { gmTitleClicks = 0; }, 1400);
+    if (gmTitleClicks >= 7) {
+      gmTitleClicks = 0;
+      if (gmTitleTimer) { clearTimeout(gmTitleTimer); gmTitleTimer = null; }
+      gmSetOn(true);
+      openGm();
+    }
+  }
+
+  function initGm() {
+    if (!ui.gameTitle) { return; }
+    ui.gameTitle.addEventListener('click', gmTitleClick);
+
+    ui.gmBtn = el('button', 'icon-btn', '⚙️');
+    ui.gmBtn.type = 'button';
+    ui.gmBtn.title = 'GM 面板';
+    ui.gmBtn.style.display = 'none';
+    ui.gmBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      openGm();
+    });
+    if (ui.gameTitle.parentNode && ui.gameTitle.parentNode.insertBefore) {
+      ui.gameTitle.parentNode.insertBefore(ui.gmBtn, ui.gameTitle.nextSibling);
+    }
+
+    if ($('gm-close')) { $('gm-close').addEventListener('click', closeGm); }
+    if ($('gm-exit')) { $('gm-exit').addEventListener('click', function () { gmSetOn(false); }); }
+    if (ui.gmModal) {
+      ui.gmModal.addEventListener('click', function (e) {
+        if (e.target === ui.gmModal) { closeGm(); }
+      });
+    }
+
+    if (gmStored()) {
+      gmOn = true;
+      gmExpose(true);
+      ui.gmBtn.style.display = '';
+    }
+  }
+
+  /* ==================================================================
    *  主循环与离线收益
    * ================================================================== */
 
@@ -1261,17 +1591,20 @@
 
       state.playTime = (state.playTime || 0) + dt;
 
+      // v0.12.0：长按连发
+      holdTick(dt);
+
       // 尸潮倒计时：跟着游玩时间走，dt 已被限制在 1 秒内，所以切后台回来不会一次扣光
       if ((state.hordeLeft || 0) > 0) {
         state.hordeLeft -= dt;
         if (state.hordeLeft <= 0) { endHorde(); }
       } else if ((state.hordeCooldown || 0) > 0) {
-        // 冷却：走完才重新开始计数，冷却期间的点击一律作废
+        // 冷却走完 → 按钮亮起，等玩家主动释放
         state.hordeCooldown -= dt;
         if (state.hordeCooldown <= 0) {
           state.hordeCooldown = 0;
           state.hordeProgress = 0;
-          toast('尸潮冷却结束，重新开始计数');
+          toast('尸潮已就绪，点击释放');
         }
       }
     }
@@ -1354,17 +1687,26 @@
     merged.bpBought = Math.max(0, Number(data.bpBought) || 0);
     merged.playTime = Math.max(0, Number(data.playTime) || 0);
     var srcT = data.tech || {};
-    for (var t = 0; t < TECH_NODES.length; t++) {
-      if (srcT[TECH_NODES[t].id]) { merged.tech[TECH_NODES[t].id] = 1; }
+    var saveVer = Number(data.v) || 0;
+    if (saveVer < 4) {
+      // v0.12.0 之前：三分支各 6 节点，id 顺序和新版不同，按旧 id 映射
+      for (var oldId in srcT) {
+        if (!srcT[oldId]) { continue; }
+        var mapped = LEGACY_TECH_MAP[oldId];
+        if (mapped) { merged.tech[mapped] = 1; }
+      }
+    } else {
+      for (var t = 0; t < TECH_NODES.length; t++) {
+        if (srcT[TECH_NODES[t].id]) { merged.tech[TECH_NODES[t].id] = 1; }
+      }
     }
     // v0.6.2：精英进度改成计数器；老档没有该字段就从 0 开始
     merged.eliteProgress = Math.max(0, Number(data.eliteProgress) || 0);
     // v0.9.0：尸潮改成开火触发 + 限时窗口；老档缺字段就是「从头开始数」
-    merged.hordeProgress = Math.min(HORDE_CLICKS, Math.max(0, Number(data.hordeProgress) || 0));
+    // v0.12.0：尸潮改为手动触发，旧的「开火发数进度」彻底废弃
+    merged.hordeProgress = 0;
     merged.hordeLeft = Math.min(HORDE_SECONDS, Math.max(0, Number(data.hordeLeft) || 0));
     merged.hordeCooldown = Math.min(HORDE_COOLDOWN, Math.max(0, Number(data.hordeCooldown) || 0));
-    // 冷却中的次数一律作废：只有冷却结束之后才重新计数
-    if (merged.hordeCooldown > 0) { merged.hordeProgress = 0; }
     if (merged.hordeLeft > 0) { merged.hordeCooldown = 0; }
     merged.buyAmount = Number(data.buyAmount) === 10 ? 10 : 1;
 
@@ -1470,6 +1812,12 @@
     ui.rankClose = $('realm-close');
     ui.fire = $('fire');
     ui.fireNote = $('fire-note');
+    ui.gameTitle = $('game-title');
+    ui.zombieStage = $('zombie-stage');
+    ui.zombie = $('zombie');
+    ui.zombieHp = $('zombie-hp-fill');
+    ui.gmModal = $('gm-modal');
+    ui.gmBody = $('gm-body');
     ui.hordeBar = $('horde-bar');
     ui.hordeFill = $('horde-fill');
     ui.hordeText = $('horde-text');
@@ -1506,7 +1854,13 @@
   }
 
   function bindEvents() {
-    ui.fire.addEventListener('click', fire);
+    ui.fire.addEventListener('click', fireByClick);
+    ui.fire.addEventListener('pointerdown', beginHold);
+    ui.fire.addEventListener('pointerup', endHold);
+    ui.fire.addEventListener('pointercancel', endHold);
+    ui.fire.addEventListener('pointerleave', endHold);
+    ui.fire.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    ui.hordeBar.addEventListener('click', releaseHorde);
 
     ui.bulk1.addEventListener('click', function () { state.buyAmount = 1; render(); });
     ui.bulk10.addEventListener('click', function () { state.buyAmount = 10; render(); });
@@ -1548,6 +1902,8 @@
       }
     });
     window.addEventListener('pagehide', function () { saveGame(); });
+
+    initGm();
   }
 
   function registerSW() {

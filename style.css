@@ -690,3 +690,139 @@ textarea{
   color:#6b6f77;
   cursor:default;
 }
+
+/* ==================================================================
+   v0.12.0 新增
+   ================================================================== */
+
+/* 标题：连点 7 次开 GM，别让它选中文字 */
+#game-title{
+  user-select:none;
+  -webkit-user-select:none;
+  -webkit-touch-callout:none;
+  cursor:default;
+}
+
+/* ---------- 击杀演出舞台（内联 SVG 剪影） ---------- */
+.zombie-stage{
+  position:relative;
+  width:150px; height:116px;
+  margin:2px auto -4px;
+  display:flex; align-items:flex-end; justify-content:center;
+  pointer-events:none;
+}
+.zombie{
+  width:112px; height:116px;
+  overflow:visible;
+  transform-origin:50% 100%;
+  transition:transform .18s ease, filter .18s ease;
+}
+.zombie-head,.zombie-torso,.zombie-arm,.zombie-leg{ fill:#2b303a; }
+.zombie-eye{ fill:var(--blood); }
+.zombie-stage.elite .zombie{ transform:scale(1.28); filter:drop-shadow(0 0 10px rgba(242,193,78,.55)); }
+.zombie-stage.crit .zombie{ filter:brightness(1.5) drop-shadow(0 0 12px rgba(242,193,78,.8)); }
+
+@keyframes zombieHit{
+  0%   { transform:translateY(0) rotate(0deg); }
+  28%  { transform:translateY(-7px) rotate(-7deg); }
+  60%  { transform:translateY(-2px) rotate(3deg); }
+  100% { transform:translateY(0) rotate(0deg); }
+}
+.zombie.hit .zombie-parts{ animation:zombieHit .17s ease-out; }
+.zombie.crit-hit .zombie-parts{ animation:zombieHit .24s ease-out; }
+
+/* 血花 */
+.blood{
+  position:absolute;
+  width:6px; height:6px;
+  border-radius:50%;
+  background:var(--blood);
+  left:50%; top:46%;
+  animation:bloodFly .48s ease-out forwards;
+}
+@keyframes bloodFly{
+  0%   { opacity:.95; transform:translate(0,0) scale(1); }
+  100% { opacity:0; transform:translate(var(--bx),var(--by)) scale(.35); }
+}
+
+/* 精英血条（舞台底部） */
+.zombie-hp{
+  position:absolute;
+  left:50%; bottom:-2px;
+  width:84px; height:4px;
+  margin-left:-42px;
+  border-radius:2px;
+  background:rgba(255,255,255,.07);
+  overflow:hidden;
+  opacity:0;
+  transition:opacity .2s ease;
+}
+.zombie-stage.elite .zombie-hp{ opacity:1; }
+.zombie-hp i{
+  display:block; height:100%; width:100%;
+  background:linear-gradient(90deg, var(--blood), var(--alert));
+  transition:width .2s ease;
+}
+
+/* ---------- 尸潮就绪：可点击 ---------- */
+.horde-bar{ cursor:pointer; }
+.horde-bar.ready{
+  border-color:rgba(242,193,78,.75);
+  animation:hordeReadyPulse 1.6s ease-in-out infinite;
+}
+.horde-bar.ready .horde-fill{
+  background:linear-gradient(90deg, rgba(196,112,58,.55), rgba(242,193,78,.55));
+}
+.horde-bar.ready .horde-text{ color:var(--alert); font-weight:700; letter-spacing:.14em; }
+@keyframes hordeReadyPulse{
+  0%,100%{ box-shadow:0 0 8px rgba(242,193,78,.20); }
+  50%    { box-shadow:0 0 24px rgba(242,193,78,.55); }
+}
+
+/* ---------- 长按连发态 ---------- */
+.fire{ user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.fire.holding{
+  border-color:rgba(242,193,78,.85);
+  box-shadow:
+    0 0 0 6px rgba(242,193,78,.14),
+    0 0 70px rgba(242,193,78,.40),
+    inset 0 0 44px rgba(242,193,78,.26);
+}
+.fire.holding .fire-title{ color:#ffd9a0; }
+
+/* ---------- GM 面板 ---------- */
+.gm-body{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin:10px 0 4px;
+  max-height:52vh;
+  overflow:auto;
+}
+.gm-group{
+  grid-column:1 / -1;
+  font-size:11px;
+  letter-spacing:.14em;
+  color:var(--muted);
+  margin-top:6px;
+}
+.gm-body button{
+  padding:9px 8px;
+  border:1px solid rgba(211,63,73,.35);
+  border-radius:10px;
+  background:rgba(211,63,73,.10);
+  color:var(--text);
+  font-family:inherit;
+  font-size:12px;
+  cursor:pointer;
+  touch-action:manipulation;
+}
+.gm-body button:active{ transform:scale(.97); }
+
+@media (prefers-reduced-motion: reduce){
+  .zombie.hit .zombie-parts,
+  .zombie.crit-hit .zombie-parts,
+  .blood,
+  .horde-bar.ready{ animation:none; }
+  .blood{ display:none; }
+}

@@ -66,6 +66,7 @@ for (const id of ids) nodes.set(id, makeEl());
 
 const docHandlers = {};
 const store = new Map();
+const pendingTimers = [];
 let rafCb = null;
 
 const document = {
@@ -102,7 +103,7 @@ const sandbox = {
   TextDecoder,
   btoa,
   atob,
-  setTimeout: () => 0,
+  setTimeout: (cb) => { pendingTimers.push(cb); return pendingTimers.length; },
   clearTimeout: () => {},
   setInterval: () => 0,
   clearInterval: () => {},
@@ -140,12 +141,12 @@ check('只显示 1 把武器', nodes.get('weapons').children.filter((c) => c.sty
 check('战术装备已移除（军火库不再有 gear 容器）', !nodes.has('gear'));
 check('武器卡带里程碑提示', nodes.get('weapons').children[0].children[1].children[3].textContent.indexOf('下一档') >= 0,
   nodes.get('weapons').children[0].children[1].children[3].textContent);
-check('科技页 = 蓝图条 + 兑换 + 3 分支', nodes.get('tech-list').children.length === 23,
+check('科技页 = 蓝图条 + 兑换 + 4 分支', nodes.get('tech-list').children.length === 27,
   'n=' + nodes.get('tech-list').children.length);
 check('战报统计初始为 0', txt('stat-manual') === '0' && txt('stat-auto') === '0' && txt('stat-total') === '0');
 check('精英进度提示', txt('fire-note').indexOf('下一只精英') >= 0, txt('fire-note'));
-check('尸潮条初始 0 / 100', txt('horde-text').indexOf('0 / 100') >= 0, txt('horde-text'));
-check('尸潮条初始不激活', nodes.get('horde-bar').classList.contains('active') === false);
+check('尸潮条初始就绪', txt('horde-text').indexOf('尸潮就绪') >= 0, txt('horde-text'));
+check('尸潮条就绪态', nodes.get('horde-bar').classList.contains('ready') === true);
 
 console.log('\n[1b] 生存等级弹窗');
 const rModal = nodes.get('realm-modal');
@@ -336,7 +337,7 @@ const saveT = { v: 4, bounty: 0, total: 1e9, manual: 0, auto: 0, clicks: 0,
 nodes.get('save-text').value = btoa(JSON.stringify(saveT));
 click('btn-import');
 click('tab-tech');
-check('科技页 = 蓝图条 + 兑换 + 3 分支 × 7', nodes.get('tech-list').children.length === 23,
+check('科技页 = 蓝图条 + 兑换 + 4 分支 × 7', nodes.get('tech-list').children.length === 27,
   'n=' + nodes.get('tech-list').children.length);
 const techHud = nodes.get('tech-list').children[0];
 const gate = nodes.get('tech-list').children[1];
@@ -361,14 +362,14 @@ check('再兑 10 张 × 29 = 290，蓝图 = 20', techHud.children[1].textContent
 
 const f1Row = nodes.get('tech-list').children[3];
 const f2Row = nodes.get('tech-list').children[4];
-check('f1 可研究（成本 12）', f1Row.children[2].disabled === false, f1Row.children[2].children[1].textContent);
+check('f1 可研究（成本 15）', f1Row.children[2].disabled === false, f1Row.children[2].children[1].textContent);
 check('f2 需前置',
   f2Row.children[2].disabled === true && f2Row.children[1].children[0].children[1].textContent === '需前置',
   f2Row.children[1].children[0].children[1].textContent);
 
 const dmgBeforeTech = parseFloat(txt('click-power'));
 f1Row.children[2]._handlers.click[0]();
-check('研究后蓝图 20 - 12 = 8', techHud.children[1].textContent === '8', techHud.children[1].textContent);
+check('研究后蓝图 20 - 15 = 5', techHud.children[1].textContent === '5', techHud.children[1].textContent);
 check('单发伤害被 ×1.15 放大', parseFloat(txt('click-power')) > dmgBeforeTech,
   dmgBeforeTech + ' -> ' + txt('click-power'));
 check('f1 标记已研究', f1Row.children[1].children[0].children[1].textContent === '已研究',
@@ -412,89 +413,179 @@ check('提示显示每 30 发一只', txt('fire-note').indexOf('每 30 发') >= 
 for (let i = 0; i < 30; i++) click('fire');
 check('30 发后计数器归零（间隔确实生效）', txt('fire-note').indexOf('还需 30 发') >= 0, txt('fire-note'));
 
-console.log('\n[9f] 尸潮：开火 100 发触发，120 秒限时增益');
+console.log('\n[9f] 尸潮：手动释放（v0.12.0）');
 const saveF = { v: 3, bounty: 0, total: 0, manual: 0, auto: 0, clicks: 0,
-  weapons: {}, gear: {}, offlineTier: 0,
+  weapons: {}, offlineTier: 0,
   prestige: 0, prestigeCount: 0, runBase: 0, soldiers: {},
-  blueprints: 0, tech: {}, playTime: 0, hordeProgress: 0, hordeLeft: 0, lastSeen: Date.now() };
+  blueprints: 0, tech: {}, playTime: 0, hordeProgress: 0, hordeLeft: 0, hordeCooldown: 0,
+  eliteProgress: 0, lastSeen: Date.now() };
 nodes.get('save-text').value = btoa(JSON.stringify(saveF));
 click('btn-import');
 click('tab-arsenal');
 const hordeBar = nodes.get('horde-bar');
 const fireBtn = nodes.get('fire');
-check('导入后尸潮进度 0 / 100', txt('horde-text').indexOf('0 / 100') >= 0, txt('horde-text'));
+check('导入后尸潮就绪', hordeBar.classList.contains('ready') === true, txt('horde-text'));
+check('就绪文案', txt('horde-text').indexOf('尸潮就绪') >= 0, txt('horde-text'));
 
-for (let i = 0; i < 99; i++) click('fire');
-check('99 发还没触发尸潮', hordeBar.classList.contains('active') === false, txt('horde-text'));
-check('进度 99 / 100', txt('horde-text').indexOf('99 / 100') >= 0, txt('horde-text'));
-check('非尸潮精英 ×2（99 发 = 97 + 2×2 = 101）', txt('bounty') === '101', txt('bounty'));
+for (let i = 0; i < 150; i++) click('fire');
+check('开火 150 发也不会自动触发', hordeBar.classList.contains('active') === false, txt('horde-text'));
 
-click('fire');
-check('第 100 发触发尸潮', hordeBar.classList.contains('active') === true, txt('horde-text'));
-check('触发的那一发本身还是普通伤害（+1 → 102）', txt('bounty') === '102', txt('bounty'));
+click('horde-bar');
+check('点按钮才触发尸潮', hordeBar.classList.contains('active') === true, txt('horde-text'));
 check('横幅切到进行中', txt('horde-text').indexOf('尸潮进行中') >= 0, txt('horde-text'));
 check('剩余 120 秒', txt('horde-text').indexOf('120 秒') >= 0, txt('horde-text'));
 check('提示条切到尸潮模式', txt('fire-note').indexOf('尸潮中') >= 0, txt('fire-note'));
 check('开火按钮进入尸潮高亮', fireBtn.classList.contains('horde') === true);
 
+const b0 = parseInt(txt('bounty'), 10);
 click('fire');
-check('尸潮中点击 ×2（+2 → 104）', txt('bounty') === '104', txt('bounty'));
-for (let i = 0; i < 18; i++) click('fire');
-check('尸潮中 18 发普通点击 = +36', txt('bounty') === '140', txt('bounty'));
-click('fire');
-check('尸潮中精英 ×5（2 × 5 = 10）', txt('bounty') === '150', txt('bounty'));
-check('精英提示显示 ×5', txt('toast').indexOf('×5') >= 0, txt('toast'));
+check('尸潮中点击 ×2', parseInt(txt('bounty'), 10) === b0 + 2, b0 + ' -> ' + txt('bounty'));
 
 // 掉率 ×3：基础 0.1%，尸潮中 0.3%；取 0.2% 正好落在两者之间
-const bp0 = bpEl();
 const realRandom2 = Math.random;
+const bp0 = bpEl();
 Math.random = () => 0.002;
 click('fire');
 Math.random = realRandom2;
-check('尸潮中掉率 ×3（0.2% 命中，平时 0.1% 不命中）', bpEl() === bp0 + 1, bp0 + ' -> ' + bpEl());
+check('尸潮中掉率 ×3（0.2% 命中）', bpEl() === bp0 + 1, bp0 + ' -> ' + bpEl());
 
 // 120 秒倒数：只在游玩时推进（dt 上限 1 秒/帧）
 let t3 = 400000;
-for (let i = 0; i < 119; i++) { const cb = rafCb; t3 += 1000; cb(t3); }
-check('119 秒时尸潮仍在', hordeBar.classList.contains('active') === true, txt('horde-text'));
-check('倒计时显示剩余 1 秒', txt('horde-text').indexOf('剩余 1 秒') >= 0, txt('horde-text'));
-{ const cb = rafCb; t3 += 1000; cb(t3); }
+for (let i = 0; i < 120; i++) { const cb = rafCb; t3 += 1000; cb(t3); }
 check('120 秒后尸潮结束', hordeBar.classList.contains('active') === false, txt('horde-text'));
 check('结束后立刻进入冷却', hordeBar.classList.contains('cooling') === true, txt('horde-text'));
 check('冷却显示 5:00', txt('horde-text').indexOf('5:00') >= 0, txt('horde-text'));
-check('冷却中不显示蓄能进度', txt('horde-text').indexOf('/ 100') === -1, txt('horde-text'));
 check('尸潮退去提示', txt('toast').indexOf('尸潮退去') >= 0, txt('toast'));
 check('开火按钮退出尸潮高亮', fireBtn.classList.contains('horde') === false);
 
-// 冷却中：既不掉蓝图（0.2% > 基础 0.1%），点击也不算有效次数
-const bp1 = bpEl();
-Math.random = () => 0.002;
-click('fire');
-Math.random = realRandom2;
-check('冷却中 0.2% 不触发掉落', bpEl() === bp1, bp1 + ' -> ' + bpEl());
-
-// 冷却期间猛点 60 发，全部作废
-for (let i = 0; i < 60; i++) click('fire');
-check('冷却中点击不累计（无蓄能进度）', txt('horde-text').indexOf('/ 100') === -1, txt('horde-text'));
-check('冷却中点击不触发尸潮', hordeBar.classList.contains('active') === false, txt('horde-text'));
+click('horde-bar');
+check('冷却中点按钮不触发', hordeBar.classList.contains('active') === false, txt('horde-text'));
+check('冷却提示', txt('toast').indexOf('冷却中') >= 0, txt('toast'));
 
 // 冷却 300 秒走完
 for (let i = 0; i < 299; i++) { const cb = rafCb; t3 += 1000; cb(t3); }
 check('冷却 299 秒还没结束', hordeBar.classList.contains('cooling') === true, txt('horde-text'));
 check('冷却剩 0:01', txt('horde-text').indexOf('0:01') >= 0, txt('horde-text'));
 { const cb = rafCb; t3 += 1000; cb(t3); }
-check('冷却结束', hordeBar.classList.contains('cooling') === false, txt('horde-text'));
-check('冷却结束后从头计数（之前 61 发全部作废）', txt('horde-text').indexOf('0 / 100') >= 0, txt('horde-text'));
-check('冷却结束提示', txt('toast').indexOf('重新开始计数') >= 0, txt('toast'));
+check('冷却结束回到就绪', hordeBar.classList.contains('ready') === true, txt('horde-text'));
+check('就绪提示', txt('toast').indexOf('尸潮已就绪') >= 0, txt('toast'));
 
-// 冷却结束后才重新有效计数
-for (let i = 0; i < 99; i++) click('fire');
-check('冷却后 99 发仍不触发', hordeBar.classList.contains('active') === false, txt('horde-text'));
-check('进度 99 / 100', txt('horde-text').indexOf('99 / 100') >= 0, txt('horde-text'));
-click('fire');
-check('冷却后第 100 发才触发', hordeBar.classList.contains('active') === true, txt('horde-text'));
+click('horde-bar');
+check('第二轮可以再放', hordeBar.classList.contains('active') === true, txt('horde-text'));
 check('第二轮从 120 秒开始', txt('horde-text').indexOf('剩余 120 秒') >= 0, txt('horde-text'));
-check('第二轮不再有冷却态', hordeBar.classList.contains('cooling') === false);
+
+console.log('\n[9g] 武器折扣（智能分支）');
+const mkSave = (over) => Object.assign({ v: 4, bounty: 0, total: 1e9, manual: 0, auto: 0, clicks: 0,
+  weapons: {}, offlineTier: 0, prestige: 0, prestigeTotal: 0, prestigeCount: 0,
+  runBase: 0, soldiers: {}, blueprints: 0, bpBought: 0, tech: {},
+  playTime: 0, hordeProgress: 0, hordeLeft: 0, hordeCooldown: 0,
+  eliteProgress: 0, lastSeen: Date.now() }, over || {});
+const importSave = (obj) => {
+  nodes.get('save-text').value = btoa(JSON.stringify(obj));
+  click('btn-import');
+};
+const priceOf = (i) => nodes.get('weapons').children[i].children[2].children[1].textContent;
+
+importSave(mkSave());
+check('无折扣：手枪 15', priceOf(0) === '15', priceOf(0));
+
+importSave(mkSave({ tech: { i1: 1 } }));
+check('低档 −25%：手枪 12', priceOf(0) === '12', priceOf(0));
+check('低档折扣不影响高档：狙击 250.00K', priceOf(4) === '250.00K', priceOf(4));
+
+importSave(mkSave({ tech: { i1: 1, i3: 1 } }));
+check('高档 −25%：狙击 187.50K', priceOf(4) === '187.50K', priceOf(4));
+check('i3 不影响低档：手枪仍 12', priceOf(0) === '12', priceOf(0));
+
+importSave(mkSave({ tech: { i1: 1, i3: 1, i4: 1 } }));
+check('两档叠加 = 40% 封顶：手枪 9', priceOf(0) === '9', priceOf(0));
+check('两档叠加 = 40% 封顶：狙击 150.00K', priceOf(4) === '150.00K', priceOf(4));
+
+console.log('\n[9h] 长按连发（智能分支）');
+const fireEl = nodes.get('fire');
+importSave(mkSave({ bounty: 0, total: 0, tech: { i2: 1 } }));
+let th = 2000000;
+{ const cb = rafCb; th += 1000; cb(th); }
+const holdBefore = parseInt(txt('bounty'), 10) || 0;
+fireEl._handlers.pointerdown[0]();
+pendingTimers.splice(0).forEach((f) => f());
+{ const cb = rafCb; th += 1000; cb(th); }
+check('长按 1 秒 = 5 发（基础 5 发/秒）', (parseInt(txt('bounty'), 10) || 0) === holdBefore + 5,
+  holdBefore + ' -> ' + txt('bounty'));
+fireEl._handlers.pointerup[0]();
+
+importSave(mkSave({ bounty: 0, total: 0, tech: { i2: 1, i5: 1, i6: 1 } }));
+{ const cb = rafCb; th += 1000; cb(th); }
+const holdBefore2 = parseInt(txt('bounty'), 10) || 0;
+fireEl._handlers.pointerdown[0]();
+pendingTimers.splice(0).forEach((f) => f());
+{ const cb = rafCb; th += 1000; cb(th); }
+check('点满两级 = 10 发/秒', (parseInt(txt('bounty'), 10) || 0) === holdBefore2 + 10,
+  holdBefore2 + ' -> ' + txt('bounty'));
+fireEl._handlers.pointerup[0]();
+
+importSave(mkSave({ bounty: 0, total: 0, tech: {} }));
+const holdBefore3 = parseInt(txt('bounty'), 10) || 0;
+fireEl._handlers.pointerdown[0]();
+pendingTimers.splice(0).forEach((f) => f());
+{ const cb = rafCb; th += 1000; cb(th); }
+check('未研究时长按无效', (parseInt(txt('bounty'), 10) || 0) === holdBefore3,
+  holdBefore3 + ' -> ' + txt('bounty'));
+fireEl._handlers.pointerup[0]();
+
+console.log('\n[9i] 科技树 21 节点 / 总成本 3890');
+importSave(mkSave({ tech: {} }));
+click('tab-tech');
+const tl = nodes.get('tech-list');
+check('科技页 27 张卡（1 hud + 1 兑换 + 4 分支头 + 21 节点）', tl.children.length === 27,
+  'n=' + tl.children.length);
+let costSum = 0;
+let nodeCount = 0;
+for (let ci = 2; ci < tl.children.length; ci++) {
+  const card = tl.children[ci];
+  if (card.className === 'tech-branch') { continue; }
+  costSum += parseInt(card.children[2].children[1].textContent, 10) || 0;
+  nodeCount++;
+}
+check('21 个节点', nodeCount === 21, 'n=' + nodeCount);
+check('总成本 3890', costSum === 3890, 'sum=' + costSum);
+check('火力进度 0/5', tl.children[2].children[2].textContent === '0/5', tl.children[2].children[2].textContent);
+check('智能进度 0/6', tl.children[20].children[2].textContent === '0/6', tl.children[20].children[2].textContent);
+
+console.log('\n[9j] GM 面板（连点标题 7 次）');
+const titleEl = nodes.get('game-title');
+const gmModal = nodes.get('gm-modal');
+gmModal.classList.add('hidden');          // 模拟 HTML 里的初始 hidden
+check('GM 默认关闭', gmModal.classList.contains('hidden') === true);
+for (let i = 0; i < 7; i++) titleEl._handlers.click[0]();
+check('连点标题 7 次打开 GM', gmModal.classList.contains('hidden') === false);
+const gmBody = nodes.get('gm-body');
+check('GM 分组齐全', gmBody.children.length > 15, 'n=' + gmBody.children.length);
+
+importSave(mkSave({ bounty: 0, total: 0, tech: {} }));
+const gmBtns = gmBody.children.filter((c) => c.className !== 'gm-group');
+const findGm = (label) => gmBtns.find((b) => b.textContent === label);
+check('有「赏金 +1M」按钮', !!findGm('赏金 +1M'));
+findGm('赏金 +1M')._handlers.click[0]();
+check('GM 赏金 +1M', txt('bounty') === '1.00M', txt('bounty'));
+
+findGm('一键全解')._handlers.click[0]();
+click('tab-tech');
+check('全解后火力 5/5', tl.children[2].children[2].textContent === '5/5', tl.children[2].children[2].textContent);
+check('全解后智能 6/6', tl.children[20].children[2].textContent === '6/6', tl.children[20].children[2].textContent);
+
+click('gm-exit');
+check('退出 GM 后关闭面板', gmModal.classList.contains('hidden') === true);
+
+console.log('\n[9k] 旧档科技 id 迁移（v < 4）');
+const flagOf = (i) => tl.children[i].children[1].children[0].children[1].textContent;
+importSave(mkSave({ v: 3, tech: { f4: 1, l6: 1, b6: 1, f3: 1 } }));
+check('旧 f4（暴击）→ 新 f3', flagOf(5) === '已研究', flagOf(5));
+check('旧 l6 → 新 l5', flagOf(13) === '已研究', flagOf(13));
+check('旧 b6 → 新 b5', flagOf(19) === '已研究', flagOf(19));
+check('被砍掉的旧 f3 不落到新节点上', flagOf(7) !== '已研究', flagOf(7));
+importSave(mkSave({ v: 4, tech: { f3: 1 } }));
+check('v4 新档直接按新 id 读', flagOf(5) === '已研究', flagOf(5));
 
 console.log('\n[10] 导出 / 非法存档 / 存储键');
 click('btn-export');
